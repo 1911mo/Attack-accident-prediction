@@ -57,7 +57,7 @@ def none_admm_attack(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, po
         feature, target_time, graph_feature, label = test_loader_ues
         # 对特征进行攻击
         start = time.time()
-        X_pgd001 = feature#32*7*48*20*20
+        #X_pgd001 = feature#32*7*48*20*20
         # 生成对抗样本
         #取出等待攻击的事故特征
         attack_accident = feature[:,:,0,:,:]#32*7*1*20*20
@@ -66,7 +66,7 @@ def none_admm_attack(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, po
         X_pgd001 = admm_attack(feature,net,target_time, graph_feature,
                       road_adj, risk_adj, poi_adj, grid_node_map)
 
-        #
+        # 
         X_pgd001 = X_pgd001.to(device)
         # 每个batch的三个量
         batch_adv = net(feature, target_time, graph_feature,
@@ -166,9 +166,10 @@ def Sparse_y_pile(origin_matrix,a):
 def admm_attack(x_origin,model,target_time, graph_feature,
                       road_adj, risk_adj, poi_adj, grid_node_map):
     #输入：特征和训练好的模型
-    #x_0大小：32*7*400
+    #x_0大小：32*7*20*20
     #x_origin原始输入样本
     #攻击发生在归一化之后
+    #未实现批攻击，仅仅是1*7*20*20，输入单样本输出单样本
     det = np.zeros((7, 20,20))
     w = np.zeros((7, 20,20))
     y = np.zeros((7, 20,20))
@@ -202,11 +203,29 @@ def admm_attack(x_origin,model,target_time, graph_feature,
         #更新z
         eta = 1/np.sqrt(iteration+1)
         model_xo = model(x_origin, target_time, graph_feature,
-                      road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
-        dev_f = model_xo^3*np.exp(model(x_0+z))*div_model_x_z
+                      road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()#大小20*20
+        #修改嵌入
+        attack_z = attack_accident_in+z
+        attack_input = x_origin
+        attack_input[:,:,0,:,:] = attack_z
+        model_xo_z = model(attack_input, target_time, graph_feature,
+                      road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()#大小20*20
+        div_model_x_z01 = div_model_x_z(attack_input,dataloader, model,target_time, graph_feature,
+                      road_adj, risk_adj, poi_adj, grid_node_map)
+        dev_f = model_xo^3*np.exp(model_xo_z)*div_model_x_z01#还需要升维
         z = (1/(eta+3*ro))*(eta*z+ro*(det+u/ro+w+s/ro+y+v/ro)-dev_f)
         #更新系数
         u = u + ro*(det-z)
         v = v + ro*(y-z)
         s = s + ro*(w-z)
-    return (x_0+z)
+    return attack_input
+
+def div_model_x_z(x_z,dataloader, net,target_time, graph_feature,
+                      road_adj, risk_adj, poi_adj, grid_node_map):
+    #返回梯度矩阵
+    feature, target_time, graph_feature, label = dataloader
+    with torch.enable_grad():
+        loss = js_div(net(x_z, target_time, graph_feature, road_adj, risk_adj, poi_adj,
+                                  grid_node_map),  label)
+        loss.backward()
+    return x_z.grad.data
