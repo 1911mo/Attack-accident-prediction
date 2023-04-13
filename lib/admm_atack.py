@@ -47,7 +47,7 @@ def none_admm_attack(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, po
     risk_mask_use = torch.from_numpy(risk_mask_use).to(device)
     print(risk_mask_use.shape)
 
-    for map, test_loader_ues in ziped:
+    for map, test_loader_ues in ziped:#迭代取值
         batch_idx += 1
         # map 32*20*20,升维
         map = np.expand_dims(map, 1).repeat(48, axis=1)  # 32*48*20*20
@@ -63,7 +63,7 @@ def none_admm_attack(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, po
         attack_accident = feature[:,:,0,:,:]#32*7*1*20*20
         attack_accident_in = np.squeeze(attack_accident)
         #将修改后的值嵌入，生成新的特征
-        X_pgd001 = admm_attack(feature,net,target_time, graph_feature,
+        X_pgd001 = admm_attack(feature,label,net,target_time, graph_feature,
                       road_adj, risk_adj, poi_adj, grid_node_map)
 
         # 
@@ -163,7 +163,34 @@ def Sparse_y_pile(origin_matrix,a):
     print(sss)
     return sss
 
-def admm_attack(x_origin,model,target_time, graph_feature,
+def Sparse_y_pile_batch(origin_matrix,a):
+    #a，卷积核心大小
+    #输入大小：32*7*20*20
+    #pile_num输入的估计数，如输入7个时间片的事故记录去估计下一个时间片
+    #32是batch数量
+    #c_di_norm2卷积后的矩阵
+    batch_fund,pile_num,measurement,_ = origin_matrix.shape
+    k = int(measurement/a)#卷积矩阵的大小
+    print(k)
+    c_di_norm2 = np.ones((batch_fund,pile_num,k,k))
+    for bf in range(batch_fund):
+        for pil in range(pile_num):
+            for p in range(k):
+                for q in range(k):
+                    c_di_norm2[bf][pil][p][q] = np.linalg.norm(origin_matrix[bf,pil,p*a:p*a+a, q*a:q*a+a])
+    print(c_di_norm2)
+    core = np.ones((a,a)).astype(float)
+     #矩阵扩充
+    sss = np.ones((batch_fund,pile_num,measurement,measurement))
+    for bf in range(batch_fund):
+        for pil in range(pile_num):
+            for p in range(k):
+                for q in range(k):
+                    sss[bf,pil,p*a:p*a+a, q*a:q*a+a] = core*c_di_norm2[bf,pil,p,q]
+    print(sss)
+    return sss
+
+def admm_attack_one(x_origin,label,model,target_time, graph_feature,
                       road_adj, risk_adj, poi_adj, grid_node_map):
     #输入：特征和训练好的模型
     #x_0大小：32*7*20*20
@@ -210,7 +237,7 @@ def admm_attack(x_origin,model,target_time, graph_feature,
         attack_input[:,:,0,:,:] = attack_z
         model_xo_z = model(attack_input, target_time, graph_feature,
                       road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()#大小20*20
-        div_model_x_z01 = div_model_x_z(attack_input,dataloader, model,target_time, graph_feature,
+        div_model_x_z01 = div_model_x_z(attack_input,label, model,target_time, graph_feature,
                       road_adj, risk_adj, poi_adj, grid_node_map)
         dev_f = model_xo^3*np.exp(model_xo_z)*div_model_x_z01#还需要升维
         z = (1/(eta+3*ro))*(eta*z+ro*(det+u/ro+w+s/ro+y+v/ro)-dev_f)
@@ -220,12 +247,70 @@ def admm_attack(x_origin,model,target_time, graph_feature,
         s = s + ro*(w-z)
     return attack_input
 
-def div_model_x_z(x_z,dataloader, net,target_time, graph_feature,
+def admm_attack(x_origin,label,model,target_time, graph_feature,
+                      road_adj, risk_adj, poi_adj, grid_node_map):
+    #输入：特征和训练好的模型
+    #x_0大小：32*7*20*20
+    #x_origin原始输入样本
+    #攻击发生在归一化之后
+    #未实现批攻击，仅仅是1*7*20*20，输入单样本输出单样本
+    det = np.zeros((32,7, 20,20))
+    w = np.zeros((32,7, 20,20))
+    y = np.zeros((32,7, 20,20))
+    z = np.zeros((32,7, 20,20))
+    u = np.zeros((32,7, 20,20))
+    v = np.zeros((32,7, 20,20))
+    s = np.zeros((32,7, 20,20))
+
+    ro = 0.8
+    gama = 0.5
+    tao = 0.5
+    iteration = 100
+
+    #滑动窗口做卷积
+    attack_accident = x_origin[:,:,0,:,:]#32*7*1*20*20
+    attack_accident_in = np.squeeze(attack_accident)
+
+    for i in range(iteration):
+        a = z - u/ro
+        b = z - s/ro
+        c = z - v/ro
+        #更新det
+        det = ro/(ro+2*gama)*a
+        #更新 y
+        y_di = Sparse_y_pile_batch(c,2)
+        y_tem = np.zeros_like(y_di)#中间变量，进行（）+操作
+        y_tem1 = np.where((1-tao/(ro*y_di))>=0,1-tao/(ro*y_di),y_tem)
+        y = y_tem1*c
+        #更新w
+        w = w 
+        #更新z
+        eta = 1/np.sqrt(iteration+1)
+        model_xo = model(x_origin, target_time, graph_feature,
+                      road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()#大小32*20*20
+        #修改嵌入
+        attack_z = attack_accident_in+z
+        attack_input = x_origin
+        attack_input[:,:,0,:,:] = attack_z
+        model_xo_z = model(attack_input, target_time, graph_feature,
+                      road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()#大小32*20*20
+        model_xo_z = np.expand_dims(model_xo_z, 1).repeat(7, axis=1)#升维为32*7*20*20 
+        div_model_x_z01 = div_model_x_z(attack_input,label, model,target_time, graph_feature,
+                      road_adj, risk_adj, poi_adj, grid_node_map)
+        div_model_x_z01 = np.expand_dims(div_model_x_z01, 1).repeat(7, axis=1)#升维为32*7*20*20 
+        dev_f = model_xo^3*np.exp(model_xo_z)*div_model_x_z01#还需要升维
+        z = (1/(eta+3*ro))*(eta*z+ro*(det+u/ro+w+s/ro+y+v/ro)-dev_f)
+        #更新系数
+        u = u + ro*(det-z)
+        v = v + ro*(y-z)
+        s = s + ro*(w-z)
+    return attack_input
+
+def div_model_x_z(x_z,label, net,target_time, graph_feature,
                       road_adj, risk_adj, poi_adj, grid_node_map):
     #返回梯度矩阵
-    feature, target_time, graph_feature, label = dataloader
     with torch.enable_grad():
-        loss = js_div(net(x_z, target_time, graph_feature, road_adj, risk_adj, poi_adj,
+        loss = nn.MSELoss(net(x_z, target_time, graph_feature, road_adj, risk_adj, poi_adj,
                                   grid_node_map),  label)
         loss.backward()
     return x_z.grad.data
