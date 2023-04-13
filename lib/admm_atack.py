@@ -14,9 +14,6 @@ import time
 import random
 from torch.utils.data import DataLoader
 
-curPath = os.path.abspath(os.path.dirname(__file__))
-rootPath = os.path.split(curPath)[0]
-sys.path.append(rootPath)
 
 def none_admm_attack(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
            grid_node_map, scaler, risk_mask, device, data_type='nyc'):
@@ -62,7 +59,7 @@ def none_admm_attack(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, po
         #取出等待攻击的事故特征
         attack_accident = feature[:,:,0,:,:]#32*7*1*20*20
         attack_accident_in = np.squeeze(attack_accident)
-        #将修改后的值嵌入，生成新的特征
+        #生成攻击特征
         X_pgd001 = admm_attack(feature,label,net,target_time, graph_feature,
                       road_adj, risk_adj, poi_adj, grid_node_map)
 
@@ -290,7 +287,7 @@ def admm_attack(x_origin,label,model,target_time, graph_feature,
                       road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()#大小32*20*20
         #修改嵌入
         attack_z = attack_accident_in+z
-        attack_input = x_origin
+        attack_input = x_origin#attack_input为攻击后的特征*full
         attack_input[:,:,0,:,:] = attack_z
         model_xo_z = model(attack_input, target_time, graph_feature,
                       road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()#大小32*20*20
@@ -298,7 +295,7 @@ def admm_attack(x_origin,label,model,target_time, graph_feature,
         div_model_x_z01 = div_model_x_z(attack_input,label, model,target_time, graph_feature,
                       road_adj, risk_adj, poi_adj, grid_node_map)
         div_model_x_z01 = np.expand_dims(div_model_x_z01, 1).repeat(7, axis=1)#升维为32*7*20*20 
-        dev_f = model_xo^3*np.exp(model_xo_z)*div_model_x_z01#还需要升维
+        dev_f = model_xo^3*np.exp(model_xo_z)*div_model_x_z01
         z = (1/(eta+3*ro))*(eta*z+ro*(det+u/ro+w+s/ro+y+v/ro)-dev_f)
         #更新系数
         u = u + ro*(det-z)
