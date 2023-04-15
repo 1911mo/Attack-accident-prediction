@@ -311,3 +311,62 @@ def div_model_x_z(x_z,label, net,target_time, graph_feature,
                                   grid_node_map),  label)
         loss.backward()
     return x_z.grad.data
+
+def ZINB_distribution_nouse(oringin_xo,b):
+    #传入b，干净样本，生成符合分布的迭代样本
+    #oringin_xo/b大小32*7*20*20
+    #寻找b的前二十位置
+    b_sort_f = b.reshape(32,7,-1)
+    b_sort = np.sort(b_sort_f,axis=2)
+    b_sort1 = b_sort[:,:,379:400]#超过40也没事情
+    b_temp = np.ones_like(b)
+    b_sort2 = b_temp*b_sort1#32*7*400,0/379
+    b_index = np.where(b>b_sort2,1.0,0.0)#需要改变的位置是1.0处，有20个
+    deno_origin = oringin_xo*46.0#从deno_origin中推断参数，生成新分布，覆盖位置
+
+    B,N,_,_ = oringin_xo.shape
+    for b in range(b):
+        for n in range(N):
+            pass
+    return 0
+
+def ZINB_distribution(oringin_xo,b):
+    #传入b，从采样出来的w中选择最接近b的
+    #oringin_xo:32*7*400
+    #b:32*7*400
+    zinb_sample = np.load('/home/wyb/mycode/GSNet-master/sampling_ee.npy')#1000*400
+    zinb_sample= np.expand_dims(zinb_sample, 0).repeat(32, axis=0)##32*1000*400
+    zinb_sample= np.expand_dims(zinb_sample, 1).repeat(7, axis=1)##32**7*1000*400
+    original_sample= np.expand_dims(oringin_xo,2).repeat(1000, axis=2)##32*7**1000**400
+    w_sample = original_sample-zinb_sample
+    min_w_b = w_sample-b#需要最小化的矩阵
+    D=np.ones((32,7,1000))
+    for i in range(32):
+        for j in range(7):
+            min_noem = np.linalg.norm(min_w_b[i,j,:,:],axis=1)
+            D[i,j,:] = min_noem #32*7*1000 --->  32*7
+    A=np.ones((32,7))
+    for i in range(32):
+        d = np.argmin(D[i,:,:])#7*1
+        A[i,:] = d#32*7
+    #w:32*7*400
+    w = np.ones((32,7,400))
+    for i in range(32):
+        for j in range(7):
+            w[i,j,:] = zinb_sample[i,j,A[i,j],:]#从位置找到对应的矩阵
+
+    return w
+
+def parameter_inference(a,b):
+    #参数推断，返回符合参数的分布
+    #a提供位置，b提供数字
+    a1 = np.argsort(a,axis=2)#a提供位置，b提供数字
+    c = np.zeros_like(b)
+    a_local = a1[:,:,2:4]#2*3*2
+    b_num = np.sort(b,axis=2)[:,:,2:4]
+    for i in range(2):
+        for j in range(3):
+            for k in range(2):
+                local = a_local[i,j,k]
+                c[i,j,local]=b_num[i,j,k]
+    print(c)
