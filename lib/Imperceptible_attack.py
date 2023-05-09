@@ -10,10 +10,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from myfunction import kl_div, js_div, log_test_results, logger_info, view_tensor
+from myfunction import kl_div, js_div, log_test_results, logger_info, view_tensor,kl_div_pro
 import time
 import random
 from torch.utils.data import DataLoader
+import datetime
+import seaborn as sb
+import matplotlib.pyplot as plt
+from lib.auxiliary import ten_loss,item_saliency_map_a,vers_attack001_k,vers_attack001_map
 
 curPath = os.path.abspath(os.path.dirname(__file__))
 rootPath = os.path.split(curPath)[0]
@@ -306,6 +310,10 @@ def item_saliency_map_zz(input_grads, k, batch_size):
     input_grads = input_grads.mean(dim=1)  # 先样本平均32*1*1*20*20
     node_map = []
     view_node = []
+    
+    #hoo = input_grads[5,:,:].cpu().numpy()
+    #sb.heatmap(hoo)
+    #ko.fu()
     # 243个道路区域有多少被包含在里边
     for i in range(batch_size):
         d1 = input_grads.cpu().numpy()  # 寻找k值
@@ -323,6 +331,7 @@ def item_saliency_map_zz(input_grads, k, batch_size):
     return np.array(node_map)
 
 
+
 def item_saliency_map_ff(input_grads, k, batch_size):
     # 反向寻找
     # 输入大小：32*7*48*20*20,数据类型是tensor
@@ -338,14 +347,17 @@ def item_saliency_map_ff(input_grads, k, batch_size):
         d = d1
         d = d.reshape(1, -1)
         d = np.sort(d, axis=1)  # 变为1维
-        kd = d[0][50]
+        kd = d[0][k]
         # print(kd)
         node_saliency_map = np.where(d1 < kd, 1., 0.)  # 20*20大小的
         node_map.append(node_saliency_map)
+        #hoo = node_saliency_map
+        #sb.heatmap(hoo)
+        #ko.fu()
     return np.array(node_map)
 
 
-# 输入标签矩阵或预测矩阵，输出loss,与标签值无关
+
 
 
 def sum_loss(a, risk_mask):
@@ -363,6 +375,19 @@ def sum_risk_file(a, pre_num, device):  # a为5、10、20、30、40
     risk_file = risk_file.to(device=device)
     return torch.sum(a*risk_file)
 
+def sum_risk_file_k(a, K, device):  # a为5、10、20、30、40
+    aaa = pd.read_pickle('accident_value.pkl')
+    aaa = aaa.reshape(-1, 400)
+    b = np.sum(aaa, axis=0)
+    sort_array = np.argsort(-b)
+    sort_array = sort_array[:K]
+    d = np.zeros(400)
+    d[sort_array] = 1
+    d = d.reshape(20, 20)
+
+    risk_file = torch.from_numpy(d)
+    risk_file = risk_file.to(device=device)
+    return torch.sum(a*risk_file)
 
 def wight_loss(a, b, ro):
     e = torch.where(a > 0, a, ro * torch.ones_like(a))
@@ -1401,6 +1426,153 @@ def log_test_csv(adv_val_predict, val_target, val_predict,  cfgs, select_node_na
 
     log_test_results(cfgs.model_dir, metric_list, file_name)
 
+
+def log_test_csv_time_K(epoch,out_K,adv_val_predict, val_target, val_predict,  cfgs, select_node_name, select_ack_name, file_name, risk_mask):
+    '''
+    节点选择方法，攻击方法
+    'dataset', 'model','node_select', 'method','K' ,'batch size'
+    计算并保存结果'clean_RMSE', 'clean_recaall', 'clean_MAP', 'clean_RCR',
+              'adv_RMSE', 'adv_recaall', 'adv_MAP', 'adv_RCR',
+              'local_adv_RMSE', 'local_adv_recaall', 'local_adv_MAP', 'local_adv_RCR'
+
+    '''
+    
+
+    # 获取当前时间
+    now = datetime.datetime.now()
+
+    # 将当前时间格式化为字符串
+    time = now.strftime("%Y-%m-%d %H:%M:%S")
+    metric_list = []
+    data_set = cfgs.dataset
+    metric_list.append(time)
+    metric_list.append(epoch)
+    model_name = cfgs.backbone
+    metric_list.append(data_set)
+    metric_list.append(model_name)
+    metric_list.append(select_node_name)
+    metric_list.append(select_ack_name)
+    metric_list.append(out_K)
+    metric_list.append(cfgs.batchsize)
+
+    clean_RMSE, clean_recaall, clean_MAP, clean_RCR = mask_evaluation_np(
+        val_target, val_predict, risk_mask, 0)
+    adv_RMSE, adv_recaall, adv_MAP, adv_RCR = mask_evaluation_np(
+        val_target, adv_val_predict, risk_mask, 0)
+    local_adv_RMSE, local_adv_recaall, local_adv_MAP, local_adv_RCR = mask_evaluation_np(
+        val_predict, adv_val_predict, risk_mask, 0)
+
+    metric_list.append(clean_RMSE)
+    metric_list.append(clean_recaall)
+    metric_list.append(clean_MAP)
+    metric_list.append(clean_RCR)
+    metric_list.append(adv_RMSE)
+    metric_list.append(adv_recaall)
+    metric_list.append(adv_MAP)
+    metric_list.append(adv_RCR)
+    metric_list.append(local_adv_RMSE)
+    metric_list.append(local_adv_recaall)
+    metric_list.append(local_adv_MAP)
+    metric_list.append(local_adv_RCR)
+    # 所有batch跑完，1个epoch保存
+
+    log_test_results(cfgs.model_dir, metric_list, file_name)
+
+def log_test_csv_time_K_ink(epoch,out_K,ink,adv_val_predict, val_target, val_predict,  cfgs, select_node_name, select_ack_name, file_name, risk_mask):
+    '''
+    节点选择方法，攻击方法
+    'dataset', 'model','node_select', 'method','K' ,'batch size'
+    计算并保存结果'clean_RMSE', 'clean_recaall', 'clean_MAP', 'clean_RCR',
+              'adv_RMSE', 'adv_recaall', 'adv_MAP', 'adv_RCR',
+              'local_adv_RMSE', 'local_adv_recaall', 'local_adv_MAP', 'local_adv_RCR'
+
+    '''
+    
+
+    # 获取当前时间
+    now = datetime.datetime.now()
+
+    # 将当前时间格式化为字符串
+    time = now.strftime("%Y-%m-%d %H:%M:%S")
+    metric_list = []
+    data_set = cfgs.dataset
+    metric_list.append(time)
+    metric_list.append(epoch)
+    model_name = cfgs.backbone
+    metric_list.append(data_set)
+    metric_list.append(model_name)
+    metric_list.append(select_node_name)
+    metric_list.append(select_ack_name)
+    metric_list.append(ink)
+    metric_list.append(out_K)
+    metric_list.append(cfgs.batchsize)
+
+    clean_RMSE, clean_recaall, clean_MAP, clean_RCR = mask_evaluation_np(
+        val_target, val_predict, risk_mask, 0)
+    adv_RMSE, adv_recaall, adv_MAP, adv_RCR = mask_evaluation_np(
+        val_target, adv_val_predict, risk_mask, 0)
+    local_adv_RMSE, local_adv_recaall, local_adv_MAP, local_adv_RCR = mask_evaluation_np(
+        val_predict, adv_val_predict, risk_mask, 0)
+
+    metric_list.append(clean_RMSE)
+    metric_list.append(clean_recaall)
+    metric_list.append(clean_MAP)
+    metric_list.append(clean_RCR)
+    metric_list.append(adv_RMSE)
+    metric_list.append(adv_recaall)
+    metric_list.append(adv_MAP)
+    metric_list.append(adv_RCR)
+    metric_list.append(local_adv_RMSE)
+    metric_list.append(local_adv_recaall)
+    metric_list.append(local_adv_MAP)
+    metric_list.append(local_adv_RCR)
+    # 所有batch跑完，1个epoch保存
+
+    log_test_results(cfgs.model_dir, metric_list, file_name)
+
+def log_test_csv_time(k_time,adv_val_predict, val_target, val_predict,  cfgs, select_node_name, select_ack_name, file_name, risk_mask):
+    '''
+    节点选择方法，攻击方法
+    'dataset', 'model','node_select', 'method','K' ,'batch size'
+    计算并保存结果'clean_RMSE', 'clean_recaall', 'clean_MAP', 'clean_RCR',
+              'adv_RMSE', 'adv_recaall', 'adv_MAP', 'adv_RCR',
+              'local_adv_RMSE', 'local_adv_recaall', 'local_adv_MAP', 'local_adv_RCR'
+
+    '''
+    metric_list = []
+    data_set = cfgs.dataset
+    metric_list.append(data_set)
+    model_name = cfgs.backbone
+    metric_list.append(model_name)
+    metric_list.append(select_node_name)
+    metric_list.append(select_ack_name)
+    metric_list.append(cfgs.K)
+    metric_list.append(cfgs.batchsize)
+
+    clean_RMSE, clean_recaall, clean_MAP, clean_RCR = mask_evaluation_np(
+        val_target, val_predict, risk_mask, 0)
+    adv_RMSE, adv_recaall, adv_MAP, adv_RCR = mask_evaluation_np(
+        val_target, adv_val_predict, risk_mask, 0)
+    local_adv_RMSE, local_adv_recaall, local_adv_MAP, local_adv_RCR = mask_evaluation_np(
+        val_predict, adv_val_predict, risk_mask, 0)
+
+    metric_list.append(clean_RMSE)
+    metric_list.append(clean_recaall)
+    metric_list.append(clean_MAP)
+    metric_list.append(clean_RCR)
+    metric_list.append(adv_RMSE)
+    metric_list.append(adv_recaall)
+    metric_list.append(adv_MAP)
+    metric_list.append(adv_RCR)
+    metric_list.append(local_adv_RMSE)
+    metric_list.append(local_adv_recaall)
+    metric_list.append(local_adv_MAP)
+    metric_list.append(local_adv_RCR)
+    # 所有batch跑完，1个epoch保存
+    metric_list.append(k_time)
+
+    log_test_results(cfgs.model_dir, metric_list, file_name)
+
 def vers_attack001(map,feature,device,l_50):
     #输入：干净样本，32*7*48*20*20
     #输出：对抗样本：32*7*48*20*20
@@ -1412,31 +1584,47 @@ def vers_attack001(map,feature,device,l_50):
     #print(zinb_sample.shape)
     a,b,c,d,e =feature.shape
     feature_use = torch.squeeze(feature[:,:,0,:,:]) #32*7*20*20
-    
+    feature_return = feature.clone().detach()
+    map_use = torch.unsqueeze(map,1).repeat(1,7,1,1)#32*7*20*20
+    map_use02 = map_use*0.01#标记位置的
+    feature_attack = feature_use*map_use+map_use02 #只攻击这些地方
+    #sb.heatmap(feature_attack[0,0,:,:].reshape(20,20).detach().cpu().numpy()*46.0)
+    #plt.show()
+    feature_attack = feature_attack.reshape(a,7,-1)#32*7*400
+    feature_new = feature_attack.to(device)#32*7*400
     for i in range(a):#32
         a_num = torch.sum(map[i,:,:]>0.5)#寻找位置
+        #print('a_sum攻击点数为{}'.format(a_num))
         if a_num==400:
             a_num = 50
-        map_use = torch.unsqueeze(map,1).repeat(1,7,1,1)#32*7*20*20
-        feature_attack = feature_use*map_use#只攻击这些地方
-        feature_attack = feature_attack.reshape(a,7,-1)#32*7*400
-        feature_new = feature_attack.to(device)#32*7*400
+        if a_num > 50:
+            a_num = 50
         for j  in range(7):
+            feature_new = feature_new.reshape(a,7,-1)
             _,zzz = torch.sort(feature_new[i,j,:],descending=True)
+            #print(zzz)
             lrand = random.randint(1,999)
             for k in range(a_num-1):
                 #print(lrand)
                 #print(feature_new.shape)
                 #print(zzz[a_num-k-1])
+                #print(ttt[k])
                 feature_new[i,j,zzz[a_num-k-1]] = l_50[lrand,k]
-    feature_new = feature_new.reshape(a,7,20,20)
-    feature_return = feature.clone().detach()
-    feature_return[:,:,0,:,:]= feature_new 
+            #for k in range(a_num, 400):
+                #feature_new[i, j, zzz[k]] = 0.
+        sb.heatmap(feature_new[i, 0, :].reshape(20,20).detach().cpu().numpy()*46.0,annot=True)
+        plt.show()
+        a()
+        feature_v = feature_new.reshape(a,7,20,20)
+        feature_return[:,:,0,:,:]= feature_v
     #print((feature_return[1,1,0,:,:]==feature[1,1,0,:,:]).min())
     return feature_return
 
 
-def node_map(select_name, cfgs, net, dataloader, risk_mask, road_adj, risk_adj, poi_adj,
+
+
+
+def node_map(select_name,chi_k,out_K, cfgs, net, dataloader, risk_mask, road_adj, risk_adj, poi_adj,
              grid_node_map, device, data_type='nyc'):
     # 输入特征，模型和标签
     # y是标签
@@ -1446,7 +1634,244 @@ def node_map(select_name, cfgs, net, dataloader, risk_mask, road_adj, risk_adj, 
     # K：选择攻击的节点数量
     for_random = cfgs.for_random
     num_nodes = cfgs.num_nodes
-    K = cfgs.K
+    K = out_K
+    step_size = cfgs.step_size
+    epsilon = cfgs.epsilon
+    net.train()
+    map = []
+    wise = pd.read_pickle('/home/wyb/mycode/GSNet-master/data/nyc/risk_adj.pkl')
+    map_243 = np.load("data/nyc/243nyc.npy")
+    map_243_n = map_243.copy()
+    map_243 =torch.from_numpy(map_243).to(device)
+    # with torch.no_grad():
+    if select_name == 'none':
+        a = np.ones((1080, 20, 20),)
+        return a
+    
+    if select_name == 'pagerank':
+        index = attack_set_by_pagerank(wise,K)
+        a = np.zeros(400)
+        a[index] = 1
+        a =a.reshape(20,20)
+        a = a*map_243_n
+        a = np.expand_dims(a,0).repeat(1080,axis=0)
+        return a
+    if select_name == 'Centrality':
+        index = attack_set_by_betweenness(wise,K)
+        a = np.zeros(400)
+        a[index] = 1
+        a =a.reshape(20,20)
+        a = a*map_243_n
+        a = np.expand_dims(a,0).repeat(1080,axis=0)
+        return a
+    if select_name == 'Degree':
+        index = attack_set_by_degree(wise,K)
+        a = np.zeros(400)
+        a[index] = 1
+        a =a.reshape(20,20)
+        a = a*map_243_n
+        a = np.expand_dims(a,0).repeat(1080,axis=0)
+        return a
+
+    if select_name == 'random':
+        # 返回np矩阵1080*20*20，值为1 的地方为选中的节点(K个)
+        a = np.zeros((1080, 20, 20),)
+        b = a.reshape(1080, -1)
+        for len_future in range(1080):
+            list = [i for i in range(num_nodes)]
+            index = random.sample(list, K)
+            b[len_future][index] = 1
+        return b.reshape(1080, 20, 20)
+    
+    if select_name == 'top_history':
+        # 返回np矩阵1080*20*20，值为1 的地方为选中的节点(K个)
+        aaa =pd.read_pickle('/home/wyb/mycode/GSNet-master/accident_value.pkl')
+        aaa=aaa.reshape(-1,400)
+        b = np.sum(aaa,axis=0)
+        sort_array=np.argsort(-b)
+        sort_array =sort_array[:K]
+        d = np.zeros(400)
+        d[sort_array]=1
+        d =d.reshape(20,20)
+        return np.expand_dims(d,0).repeat(1080,axis=0)
+    
+    if select_name == 'saliency_loss_mse':
+        for feature, target_time, graph_feature, label in dataloader:
+            # 选择敏感节点
+            X_saliency = feature
+            X = feature
+            saliency_steps = 5
+            target_time, graph_feature, label = target_time.to(
+                device), graph_feature.to(device), label.to(device)
+            risk_mask_use = torch.from_numpy(risk_mask).to(device)
+            X = X.to(device)
+            X_saliency = X_saliency.to(device)
+            X_saliency.requires_grad = True  # 先放进去在设置
+            X_saliency.retain_grad()
+
+            net.to(device)
+            for _ in range(saliency_steps):
+                if for_random:
+                    random_noise = torch.FloatTensor(
+                        *X_saliency.shape).uniform_(-epsilon / 10, epsilon / 10).cuda()
+                    X_saliency = Variable(
+                        X_saliency.data + random_noise, requires_grad=True)
+                opt_saliency = optim.SGD([X_saliency], lr=1e-3)
+                opt_saliency.zero_grad()
+                with torch.enable_grad():
+                    loss_saliency = nn.MSELoss()(net(X_saliency, target_time, graph_feature, road_adj, risk_adj, poi_adj,
+                                                     grid_node_map), label)
+                loss_saliency.backward()
+
+                eta_s = step_size * X_saliency.grad.data.sign()
+                inputs_grad = X_saliency.grad.data
+                # X_saliency随着迭代变化
+                X_saliency = Variable(
+                    X_saliency.data + eta_s, requires_grad=True)
+                eta_s = torch.clamp(
+                    X_saliency.data - X.data, -epsilon, epsilon)
+                X_saliency = Variable(X.data + eta_s, requires_grad=True)
+                X_saliency = Variable(torch.clamp(
+                    X_saliency, 0, 1.0), requires_grad=True)
+            saliency_map = item_saliency_map_zz(
+                inputs_grad, K, feature.shape[0])
+            map.append(saliency_map)
+        select_name = np.concatenate(map, 0)
+        print(select_name.shape)
+        return select_name
+    if select_name == 'sum_yi_loss':  # 不迭代
+        for feature, target_time, graph_feature, label in dataloader:
+            # 选择敏感节点
+            X_saliency = feature
+            X = feature
+            target_time, graph_feature, label = target_time.to(
+                device), graph_feature.to(device), label.to(device)
+            risk_mask_use = torch.from_numpy(risk_mask).to(device)
+            X = X.to(device)
+            X_saliency = X_saliency.to(device)
+            X_saliency.requires_grad = True  # 先放进去在设置
+            X_saliency.retain_grad()
+
+            net.to(device)
+
+            if for_random:
+                random_noise = torch.FloatTensor(
+                    *X_saliency.shape).uniform_(-epsilon / 10, epsilon / 10).cuda()
+                X_saliency = Variable(
+                    X_saliency.data + random_noise, requires_grad=True)
+            opt_saliency = optim.SGD([X_saliency], lr=1e-3)
+            opt_saliency.zero_grad()
+            with torch.enable_grad():
+                loss_saliency = sum_loss(net(X_saliency, target_time, graph_feature, road_adj, risk_adj, poi_adj,
+                                             grid_node_map), risk_mask_use)
+            loss_saliency.backward()
+            inputs_grad = X_saliency.grad.data
+            # 看看梯度信息
+            # view_tensor(inputs_grad)
+            saliency_map = item_saliency_map_zz(
+                inputs_grad, K, feature.shape[0])
+            map.append(saliency_map)
+        select_name = np.concatenate(map, 0)
+        print(select_name.shape)
+        return select_name
+    if select_name == 'SLT':  # 不迭代
+        for feature, target_time, graph_feature, label in dataloader:
+            # 选择敏感节点
+            X_saliency = feature
+            X = feature
+            target_time, graph_feature, label = target_time.to(
+                device), graph_feature.to(device), label.to(device)
+            risk_mask_use = torch.from_numpy(risk_mask).to(device)
+            X = X.to(device)
+            X_saliency = X_saliency.to(device)
+            X_saliency.requires_grad = True  # 先放进去在设置
+            X_saliency.retain_grad()
+
+            net.to(device)
+
+            if for_random:
+                random_noise = torch.FloatTensor(
+                    *X_saliency.shape).uniform_(-epsilon / 10, epsilon / 10).cuda()
+                X_saliency = Variable(
+                    X_saliency.data + random_noise, requires_grad=True)
+            opt_saliency = optim.SGD([X_saliency], lr=1e-3)
+            opt_saliency.zero_grad()
+            with torch.enable_grad():
+                loss_saliency = sum_risk_file_k(net(X_saliency, target_time, graph_feature, road_adj, risk_adj, poi_adj,
+                                                  grid_node_map), 12, device)#12是风险最高的前12个区域
+            loss_saliency.backward()
+            inputs_grad = X_saliency.grad.data
+            # 看看梯度信息
+            # view_tensor(inputs_grad)
+            saliency_map = item_saliency_map_ff(
+                inputs_grad, K, feature.shape[0])#此处K是攻击节点的位置
+            map.append(saliency_map)
+            ##可视化
+            #map_view = saliency_map[5,:,:].copy()
+            #sb.heatmap(map_view)
+            #map.fu()
+        select_name = np.concatenate(map, 0)
+        #print(select_name.shape)
+        return select_name
+    if select_name == 'ten':  # 不迭代
+        for feature, target_time, graph_feature, label in dataloader:
+            # 选择敏感节点
+            X_saliency = feature
+            X = feature
+            target_time, graph_feature, label = target_time.to(
+                device), graph_feature.to(device), label.to(device)
+            risk_mask_use = torch.from_numpy(risk_mask).to(device)
+            X = X.to(device)
+            X_saliency = X_saliency.to(device)
+            X_saliency.requires_grad = True  # 先放进去在设置
+            X_saliency.retain_grad()
+
+            net.to(device)
+
+            if for_random:
+                random_noise = torch.FloatTensor(
+                    *X_saliency.shape).uniform_(-epsilon / 10, epsilon / 10).cuda()
+                X_saliency = Variable(
+                    X_saliency.data + random_noise, requires_grad=True)
+            opt_saliency = optim.SGD([X_saliency], lr=1e-3)
+            opt_saliency.zero_grad()
+            with torch.enable_grad():
+                loss_saliency = ten_loss(net(X_saliency, target_time, graph_feature, road_adj, risk_adj, poi_adj,
+                                                  grid_node_map), chi_k, device)#12是风险最高的前12个区域
+            loss_saliency.backward()
+            inputs_grad = X_saliency.grad.data
+            # 看看梯度信息
+            map_view = inputs_grad[5,0,0,:,:].clone().detach().cpu().numpy().reshape(20,20)
+            map_view = np.where(map_view>0.00005,1,0)
+            #print(map_view.shape)
+            #sb.heatmap(map_view,annot=True)
+            #map.fu()
+            # view_tensor(inputs_grad)
+            
+            saliency_map = item_saliency_map_a(
+                inputs_grad, K, map_243)#此处K是攻击节点的位置
+            map.append(saliency_map)
+            ##可视化
+            #map_view = saliency_map[5,:,:].copy()
+            #sb.heatmap(map_view)
+            #map.fu()
+            
+        select_name = np.concatenate(map, 0)
+        #print(select_name.shape)
+        np.save('map_{}.npy'.format(K),select_name)
+        return select_name
+    
+def node_map_k(select_name,out_K, ink,cfgs, net, dataloader, risk_mask, road_adj, risk_adj, poi_adj,
+             grid_node_map, device, data_type='nyc'):
+    # 输入特征，模型和标签
+    # y是标签
+    # select_name:节点选择方法
+    # Random:随机处理
+    # num_nodes：节点数量
+    # K：选择攻击的节点数量
+    for_random = cfgs.for_random
+    num_nodes = cfgs.num_nodes
+    K = out_K
     step_size = cfgs.step_size
     epsilon = cfgs.epsilon
     net.train()
@@ -1580,7 +2005,7 @@ def node_map(select_name, cfgs, net, dataloader, risk_mask, road_adj, risk_adj, 
         select_name = np.concatenate(map, 0)
         print(select_name.shape)
         return select_name
-    if select_name == 'sum_yi_loss_test':  # 不迭代
+    if select_name == 'SLT':  # 不迭代
         for feature, target_time, graph_feature, label in dataloader:
             # 选择敏感节点
             X_saliency = feature
@@ -1603,8 +2028,8 @@ def node_map(select_name, cfgs, net, dataloader, risk_mask, road_adj, risk_adj, 
             opt_saliency = optim.SGD([X_saliency], lr=1e-3)
             opt_saliency.zero_grad()
             with torch.enable_grad():
-                loss_saliency = sum_risk_file(net(X_saliency, target_time, graph_feature, road_adj, risk_adj, poi_adj,
-                                                  grid_node_map), 40, device)
+                loss_saliency = sum_risk_file_k(net(X_saliency, target_time, graph_feature, road_adj, risk_adj, poi_adj,
+                                                  grid_node_map), ink, device)
             loss_saliency.backward()
             inputs_grad = X_saliency.grad.data
             # 看看梯度信息
@@ -1615,7 +2040,42 @@ def node_map(select_name, cfgs, net, dataloader, risk_mask, road_adj, risk_adj, 
         select_name = np.concatenate(map, 0)
         print(select_name.shape)
         return select_name
+    
+    if select_name == 'SLT_2':  # 不迭代
+        for feature, target_time, graph_feature, label in dataloader:
+            # 选择敏感节点
+            X_saliency = feature
+            X = feature
+            target_time, graph_feature, label = target_time.to(
+                device), graph_feature.to(device), label.to(device)
+            risk_mask_use = torch.from_numpy(risk_mask).to(device)
+            X = X.to(device)
+            X_saliency = X_saliency.to(device)
+            X_saliency.requires_grad = True  # 先放进去在设置
+            X_saliency.retain_grad()
 
+            net.to(device)
+
+            if for_random:
+                random_noise = torch.FloatTensor(
+                    *X_saliency.shape).uniform_(-epsilon / 10, epsilon / 10).cuda()
+                X_saliency = Variable(
+                    X_saliency.data + random_noise, requires_grad=True)
+            opt_saliency = optim.SGD([X_saliency], lr=1e-3)
+            opt_saliency.zero_grad()
+            with torch.enable_grad():
+                loss_saliency = sum_risk_file_k(net(X_saliency, target_time, graph_feature, road_adj, risk_adj, poi_adj,
+                                                    grid_node_map), 12, device)
+            loss_saliency.backward()
+            inputs_grad = X_saliency.grad.data
+            # 看看梯度信息
+            # view_tensor(inputs_grad)
+            saliency_map = item_saliency_map_a(
+                inputs_grad, K, feature.shape[0])
+            map.append(saliency_map)
+        select_name = np.concatenate(map, 0)
+        print(select_name.shape)
+        return select_name
 
 def vers_attack002(hours,feature):
     #feature:32*7*48*20*20
@@ -1623,7 +2083,7 @@ def vers_attack002(hours,feature):
     #a:32*7*24*20*20
     if hours==0:
         return feature
-    
+
     for i in range(feature.shape[0]):#样本
         for j in range(feature.shape[1]):#时间片
             a = torch.zeros(24,feature.shape[3],feature.shape[4])
@@ -1716,11 +2176,191 @@ def ZINBSC(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
     num_steps = cfgs.ack_num_steps
     step_size = cfgs.ack_step_size
     epsilon = cfgs.ack_epsilon
-
+    Random_noise = cfgs.Random_noise
     days = cfgs.days
     hours = cfgs.hours
     weather = cfgs.weather
 
+    net.train()
+    acc_prediction_list = []
+    label_list = []
+    clean_prediction_list = []
+    a = []
+    batch_idx = 0
+    batch_num_x = 0
+    unable=[]
+    # with torch.no_grad():
+    # 载入map数据
+    map_loader = DataLoader(dataset=map, batch_size=32, shuffle=False)
+    ziped = zip(map_loader, dataloader)  # 封装map的迭代器
+
+    risk_mask_use = np.expand_dims(risk_mask, 0).repeat(32, axis=0)
+    risk_mask_use = torch.from_numpy(risk_mask_use).to(device)
+    risk_mask_div = torch.from_numpy(risk_mask.copy()).to(device)
+
+    l_50 = np.load('/home/wyb/mycode/GSNet-master/adversal_sample/40_sample.npy')/25.0
+    l_50 = torch.from_numpy(l_50).to(device)
+
+    a_grid_ori = pd.read_pickle('/home/wyb/mycode/GSNet-master/data/nyc/grid_node_map.pkl')#400*243
+    a_grid_ori  = np.expand_dims(a_grid_ori ,0).repeat(7,axis=0)#7*400*243
+    
+
+    for map, test_loader_ues in ziped:
+        
+        batch_idx += 1
+        # map 32*20*20,升维
+        map_01 = map.clone().detach().to(device)#risk用
+        map = np.expand_dims(map, 1).repeat(48, axis=1)  # 32*48*20*20
+        map = np.expand_dims(map, 1).repeat(7, axis=1)  # 32*7*48*20*20
+        map = map.astype(np.float32)
+        map = torch.from_numpy(map)
+        feature, target_time, graph_feature, label = test_loader_ues
+        # 对特征进行攻击
+        a_grid_ori_a = a_grid_ori.copy()
+        a_grid_ori_a  = np.expand_dims(a_grid_ori_a ,0).repeat(feature.shape[0],axis=0)#32*7*400*243
+        a_grid_ori_b = torch.from_numpy(a_grid_ori_a).to(torch.float).to(device)
+        start = time.time()
+        X_pgd001 = feature.clone().detach()
+        #graph_feature攻击
+
+        # 生成对抗样本
+        
+        if Random_noise:
+            random_noise = torch.FloatTensor(
+                *feature.shape).uniform_(-epsilon/10, epsilon/10)
+            feature = Variable(feature.data + map *
+                               random_noise, requires_grad=True)
+        map = map.to(device)
+        for _ in range(num_steps):
+            opt = optim.SGD([feature], lr=1e-3)
+            opt.zero_grad()
+            feature = Variable(feature.data, requires_grad=True)
+            target_time, graph_feature, label =  target_time.to(
+                device), graph_feature.to(device), label.to(device)
+            feature = feature.to(device)
+            net.to(device)
+            feature.retain_grad()
+            with torch.enable_grad():
+                loss = kl_div(net(feature, target_time, graph_feature, road_adj, risk_adj, poi_adj,
+                                  grid_node_map),  label)#,risk_mask_div
+            loss.backward()
+
+            X_pgd = feature  # 
+
+            eta = step_size * X_pgd.grad.data.sign()*map
+            X_pgd = Variable(X_pgd.data + eta, requires_grad=True)
+            eta = torch.clamp(X_pgd.data - feature.data, -epsilon, epsilon)
+            X_pgd = Variable(feature.data + eta, requires_grad=True)
+            X_pgd = Variable(torch.clamp(X_pgd, 0, 1.0),
+                             requires_grad=True)
+            feature = X_pgd
+        #feature = atc_round(feature,X_pgd001)#攻击后攻击前
+        X_pgd001 = X_pgd001.to(device)
+        #计算不可感知性
+        unable.append(torch.sum(feature[:,:,1:25,:,:]>0)) 
+        #####组合攻击方法
+        #1.risk攻击
+        feature = vers_attack001_map(map_01,feature,device,l_50)
+        #2.时间攻击
+        #print(map_01.shape)
+        #sb.heatmap(map_01[2,:,:].detach().cpu().numpy())
+        #print("our的方法{}".format(torch.sum(feature[:,:,0,:,:].reshape(-1)>0)))
+        #print("原始样本{}".format(torch.sum(X_pgd001[:,:,0,:,:].reshape(-1)>0)))
+        #ddm = X_pgd001[9,5,0,:,:].detach().cpu().numpy()
+        #ddp = feature[9,5,0,:,:].detach().cpu().numpy()
+        #sb.heatmap(ddm*46.0)
+        #plt.show()
+        #sb.heatmap(ddp*46.0)
+        #plt.show()
+        #feature.duff()
+        #24Hours
+        feature = vers_attack002(hours,feature)
+        #7days
+        feature = vers_attack003(days,feature)
+        #weather
+        feature = vers_attack004(weather,feature)
+        #holiday
+        feature = vers_attack005(feature)
+        ####组合攻击结束
+        target_time_adv = target_time.clone().detach()
+        graph_feature_adv = graph_feature.clone().detach()
+
+        target_time_adv = feature[:,6,1:33,5,5]#任选一个地方，时间片6
+        #noda_map
+        #a_grid:32*7*400*243
+        #32*7*1*400  32*7*400*243
+        hi = feature.shape[0]
+        ddd=torch.matmul(feature[:,:,0,:,:].reshape(hi,7,400).unsqueeze(2),a_grid_ori_b).squeeze()#32*7*1*400
+
+        graph_feature_adv[:,:,1,:] = ddd
+        graph_feature_adv[:,:,1:3,:] = torch.matmul(feature[:,:,46:48,:,:].reshape(hi,7,2,400),a_grid_ori_b)
+        # 每个batch的三个量
+        batch_adv = net(feature, target_time_adv, graph_feature_adv,#32*7*3*243//32*32
+                        road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
+        batch_x = net(X_pgd001, target_time, graph_feature,
+                      road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
+        batch_label = label.detach().cpu().numpy()
+        # 保存入数组和打印
+        clean_prediction_list.append(batch_x)
+        acc_prediction_list.append(batch_adv)
+        label_list.append(batch_label)
+        inves_batch_adv = scaler.inverse_transform(batch_adv)
+        inves_batch_x = scaler.inverse_transform(batch_x)
+        inves_batch_label = scaler.inverse_transform(batch_label)
+        clean_RMSE, clean_Recall, clean_MAP, clean_RCR = mask_evaluation_np(
+            inves_batch_label, inves_batch_x, risk_mask, 0)
+        adv_RMSE, adv_Recall, adv_MAP, adv_RCR = mask_evaluation_np(
+            inves_batch_label, inves_batch_adv, risk_mask, 0)
+        # 打印日志输出
+        batch_num_x += len(feature)
+        if batch_idx % cfgs.log_interval == 0:
+            logger_info(logger, False, 'Info:  [{}/{} ({:.0f}%)]\t    adv_RMSE: {:.4f} adv_Recall: {:.4f} adv_MAP: {:.4f} adv_RCR: {:.4f} time:{:.3f}'.format(
+                batch_num_x, 1080,
+                100. * batch_idx / len(dataloader),
+                adv_RMSE, adv_Recall, adv_MAP, adv_RCR,
+                time.time() - start))
+        a.append(feature.detach().cpu().numpy())
+    a = np.concatenate(a,0)
+    #np.save('adversal_sample/zinb/20node.npy',a)
+    clean_prediction = np.concatenate(clean_prediction_list, 0)
+    prediction = np.concatenate(acc_prediction_list, 0)
+    label = np.concatenate(label_list, 0)
+    # 将标准化后的数据转为原始数据
+    inverse_trans_pre = scaler.inverse_transform(prediction)
+    inverse_trans_label = scaler.inverse_transform(label)
+    inverse_trans_clean_pre = scaler.inverse_transform(clean_prediction)
+    # 打印一个epoch的信息
+    clean_RMSE, clean_Recall, clean_MAP, clean_RCR = mask_evaluation_np(
+        inverse_trans_label, inverse_trans_clean_pre, risk_mask, 0)
+    adv_RMSE, adv_Recall, adv_MAP, adv_RCR = mask_evaluation_np(
+        inverse_trans_label, inverse_trans_pre, risk_mask, 0)
+    logger_info(logger, False, 'Info:  不可感知性质：{}'.format(torch.sum(torch.tensor(unable).detach().cpu()/1080./7/20/20).item()) )
+    logger_info(logger, False, '攻击时间：Info:time:{:.3f} \t  clean_RMSE: {:.4f} clean_Recall: {:.4f} clean_MAP: {:.4f} clean_RCR: {:.4f}   adv_RMSE: {:.4f} adv_Recall: {:.4f} adv_MAP: {:.4f} adv_RCR: {:.4f}'.format(
+                time.time() - start,
+                clean_RMSE, clean_Recall, clean_MAP, clean_RCR,
+                adv_RMSE, adv_Recall, adv_MAP, adv_RCR,))
+
+    return inverse_trans_pre, inverse_trans_label,  inverse_trans_clean_pre
+
+def ZINBSC_time(k_time,logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
+           grid_node_map, scaler, risk_mask, device, data_type='nyc'):
+    '''
+    logger:日志保存
+    cfgs：配置信息
+    num_steps:迭代次数
+    step_size：步长
+    epsilon,：扰动大小
+    map:攻击节点矩阵
+    不可感知
+    '''
+    num_steps = cfgs.ack_num_steps
+    step_size = cfgs.ack_step_size
+    epsilon = cfgs.ack_epsilon
+    Random_noise = cfgs.Random_noise
+    #手动控制
+    days = 0
+    hours = 0
+    weather = k_time
     net.train()
     acc_prediction_list = []
     label_list = []
@@ -1763,11 +2403,18 @@ def ZINBSC(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
         #graph_feature攻击
 
         # 生成对抗样本
+        
+        if Random_noise:
+            random_noise = torch.FloatTensor(
+                *feature.shape).uniform_(-epsilon/10, epsilon/10)
+            feature = Variable(feature.data + map *
+                               random_noise, requires_grad=True)
+        map = map.to(device)
         for _ in range(num_steps):
             opt = optim.SGD([feature], lr=1e-3)
             opt.zero_grad()
             feature = Variable(feature.data, requires_grad=True)
-            map, target_time, graph_feature, label = map.to(device), target_time.to(
+            target_time, graph_feature, label =  target_time.to(
                 device), graph_feature.to(device), label.to(device)
             feature = feature.to(device)
             net.to(device)
@@ -1904,7 +2551,7 @@ def fgsm_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
         # 对特征进行攻击
         start = time.time()
         X_pgd001 = feature.clone().detach()
-        # 添加随机噪声
+        # 不添加随机噪声
         map, target_time, graph_feature, label = map.to(device), target_time.to(
             device), graph_feature.to(device), label.to(device)
         a_grid_ori_a = a_grid_ori.copy()
@@ -1933,12 +2580,17 @@ def fgsm_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
             feature = X_pgd
         feature = atc_round(feature,X_pgd001)#攻击后攻击前
         X_pgd001 = X_pgd001.to(device)
-        # 每个batch的三个量
-        #vote投票确保不可感知
-        #vote_day(feature,device)
+        
+        #ddm = X_pgd001[25,5,0,:,:].detach().cpu().numpy()
+        #ddp = feature[10,5,0,:,:].detach().cpu().numpy()
+        #sb.heatmap(ddm)
+        #sb.heatmap(ddp*46.0)
+        #feature.duff()
+
+
+
         feature_h = vote_hours(feature,device)
-        #print(torch.sum(feature_h!=feature))
-        #vote_weather(feature,device)
+
         #######----------##########取整就行
         graph_feature_adv = graph_feature.clone().detach()
         #noda_map
@@ -1950,9 +2602,9 @@ def fgsm_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
         graph_feature_adv[:,:,1,:] = ddd
         graph_feature_adv[:,:,1:3,:] = torch.matmul(feature[:,:,46:48,:,:].reshape(hi,7,2,400),a_grid_ori_b)
         # 每个batch的三个量
-        batch_adv = net(feature, target_time, graph_feature,
+        batch_adv = net(feature, target_time, graph_feature_adv,
                         road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
-        batch_x = net(X_pgd001, target_time, graph_feature_adv,
+        batch_x = net(X_pgd001, target_time, graph_feature,
                       road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
         batch_label = label.detach().cpu().numpy()
         # 保存入数组和打印
@@ -1995,6 +2647,447 @@ def fgsm_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
 
     return inverse_trans_pre, inverse_trans_label,  inverse_trans_clean_pre
 
+def min_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
+        grid_node_map, scaler, risk_mask, device, data_type='nyc'):
+    '''
+    min攻击方法
+    logger:日志保存
+    cfgs：配置信息
+    num_steps:迭代次数
+    step_size：步长
+    epsilon,：扰动大小
+    map:攻击节点矩阵
+    '''
+    num_steps = cfgs.ack_num_steps
+    step_size = cfgs.ack_step_size
+    epsilon = cfgs.ack_epsilon
+
+    net.train()
+    acc_prediction_list = []
+    label_list = []
+    clean_prediction_list = []
+    a = []
+    batch_idx = 0
+    batch_num_x = 0
+    # with torch.no_grad():
+    # 载入map数据
+    map_loader = DataLoader(dataset=map, batch_size=32, shuffle=False)
+    ziped = zip(map_loader, dataloader)  # 封装map的迭代器
+    
+    a_grid_ori = pd.read_pickle('/home/wyb/mycode/GSNet-master/data/nyc/grid_node_map.pkl')#400*243
+    a_grid_ori  = np.expand_dims(a_grid_ori ,0).repeat(7,axis=0)#7*400*243
+    
+    
+    for map, test_loader_ues in ziped:
+        batch_idx += 1
+        # map 32*20*20,升维
+        map = np.expand_dims(map, 1).repeat(48, axis=1)  # 32*48*20*20
+        map = np.expand_dims(map, 1).repeat(7, axis=1)  # 32*7*48*20*20
+        map = map.astype(np.float32)
+        map = torch.from_numpy(map)
+        feature, target_time, graph_feature, label = test_loader_ues
+        # 对特征进行攻击
+        start = time.time()
+        X_pgd001 = feature.clone().detach()
+        X_pgd001 = X_pgd001.to(device)
+        # 添加随机噪声
+        map, target_time, graph_feature, label = map.to(device), target_time.to(
+            device), graph_feature.to(device), label.to(device)
+        a_grid_ori_a = a_grid_ori.copy()
+        a_grid_ori_a  = np.expand_dims(a_grid_ori_a ,0).repeat(feature.shape[0],axis=0)#32*7*400*243
+        a_grid_ori_b = torch.from_numpy(a_grid_ori_a).to(torch.float).to(device)
+    
+        previous_grad = torch.zeros_like(feature.data)
+        previous_grad = previous_grad.to(device)
+        # 生成对抗样本
+        for _ in range(num_steps):
+            opt = optim.SGD([feature], lr=1e-3)
+            opt.zero_grad()
+            feature = Variable(feature.data, requires_grad=True)
+            feature = feature.to(device)
+            net.to(device)
+            feature.retain_grad()
+            with torch.enable_grad():
+                loss = nn.MSELoss()(net(feature, target_time, graph_feature, road_adj, risk_adj, poi_adj,
+                                        grid_node_map), label)
+            loss.backward()
+
+            X_pgd = feature  # 脱裤子放屁..
+            grad = X_pgd.grad.data / \
+                torch.mean(torch.abs(X_pgd.grad.data),
+                           [1, 2, 3, 4], keepdim=True)
+            previous_grad = torch.tensor(
+                1.0) * previous_grad + grad  # 1.0可以是一个参数，写入cfgs文件配置中
+            X_pgd = Variable(X_pgd.data + step_size *
+                             previous_grad.sign(), requires_grad=True)
+            eta = torch.clamp(X_pgd.data - feature.data, -epsilon, epsilon)
+            X_pgd = Variable(feature.data + eta, requires_grad=True)
+            X_pgd = Variable(torch.clamp(X_pgd, 0, 1.0), requires_grad=True)
+            feature = X_pgd
+        eta = torch.clamp(X_pgd.data - X_pgd001.data, -epsilon, epsilon) * map
+        X_pgd = Variable(X_pgd001.data + eta, requires_grad=True)
+        X_pgd = Variable(torch.clamp(X_pgd, 0, 1.0), requires_grad=True)
+
+        X_pgd_round = atc_round(X_pgd,X_pgd001)#攻击后攻击前
+        #print(torch.sum(X_pgd[:,:,1:33,:,:]!=(vote_hours(X_pgd,device)[:,:,1:33,:,:])))
+        X_pgd_round = X_pgd_round.to(device)
+
+        # 每个batch的三个量
+        X_pgd_h = vote_hours(X_pgd_round,device)
+        X_pgd_d = vote_days(X_pgd_h,device)
+        X_pgd_ho = vote_holiday(X_pgd_d,device)
+        X_pgd_w = vote_weather(X_pgd_ho,device)
+        #print(torch.sum(X_pgd_w[:,:,41:46,:,:]!=X_pgd_ho[:,:,41:46,:,:]))
+        #print(X_pgd_h.diss())
+        graph_feature_adv = graph_feature.clone().detach()
+        hi = X_pgd_w.shape[0]
+        ddd=torch.matmul(X_pgd_w[:,:,0,:,:].reshape(hi,7,400).unsqueeze(2),a_grid_ori_b).squeeze()#32*7*1*400
+        graph_feature_adv[:,:,1,:] = ddd
+        graph_feature_adv[:,:,1:3,:] = torch.matmul(X_pgd_w[:,:,46:48,:,:].reshape(hi,7,2,400),a_grid_ori_b)
+        # 每个batch的三个量
+        batch_adv = net(X_pgd_w, target_time, graph_feature_adv,
+                        road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
+        batch_x = net(X_pgd001, target_time, graph_feature,
+                      road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
+        batch_label = label.detach().cpu().numpy()
+        # 保存入数组和打印
+        clean_prediction_list.append(batch_x)
+        acc_prediction_list.append(batch_adv)
+        label_list.append(batch_label)
+        inves_batch_adv = scaler.inverse_transform(batch_adv)
+        inves_batch_x = scaler.inverse_transform(batch_x)
+        inves_batch_label = scaler.inverse_transform(batch_label)
+        clean_RMSE, clean_Recall, clean_MAP, clean_RCR = mask_evaluation_np(
+            inves_batch_label, inves_batch_x, risk_mask, 0)
+        adv_RMSE, adv_Recall, adv_MAP, adv_RCR = mask_evaluation_np(
+            inves_batch_label, inves_batch_adv, risk_mask, 0)
+        # 打印日志输出
+        batch_num_x += len(feature)
+        if batch_idx % cfgs.log_interval == 0:
+            logger_info(logger, False, 'Info:  [{}/{} ({:.0f}%)]\t  clean_RMSE: {:.4f} clean_Recall: {:.4f} clean_MAP: {:.4f} clean_RCR: {:.4f}   adv_RMSE: {:.4f} adv_Recall: {:.4f} adv_MAP: {:.4f} adv_RCR: {:.4f} time:{:.3f}'.format(
+                batch_num_x, 1080,
+                100. * batch_idx / len(dataloader),
+                clean_RMSE, clean_Recall, clean_MAP, clean_RCR,
+                adv_RMSE, adv_Recall, adv_MAP, adv_RCR,
+                time.time() - start))
+        a.append(X_pgd_w.detach().cpu().numpy())
+    clean_prediction = np.concatenate(clean_prediction_list, 0)
+    prediction = np.concatenate(acc_prediction_list, 0)
+    label = np.concatenate(label_list, 0)
+    a = np.concatenate(a,0)
+    #np.save('adversal_sample/min/min20node.npy',a)
+    # 将标准化后的数据转为原始数据
+    inverse_trans_pre = scaler.inverse_transform(prediction)
+    inverse_trans_label = scaler.inverse_transform(label)
+    inverse_trans_clean_pre = scaler.inverse_transform(clean_prediction)
+    # 打印一个epoch的信息
+    clean_RMSE, clean_Recall, clean_MAP, clean_RCR = mask_evaluation_np(
+        inverse_trans_label, inverse_trans_clean_pre, risk_mask, 0)
+    adv_RMSE, adv_Recall, adv_MAP, adv_RCR = mask_evaluation_np(
+        inverse_trans_label, inverse_trans_pre, risk_mask, 0)
+    logger_info(logger, False, '攻击时间：Info:time:{:.3f} \t  clean_RMSE: {:.4f} clean_Recall: {:.4f} clean_MAP: {:.4f} clean_RCR: {:.4f}   adv_RMSE: {:.4f} adv_Recall: {:.4f} adv_MAP: {:.4f} adv_RCR: {:.4f}'.format(
+                time.time() - start,
+                clean_RMSE, clean_Recall, clean_MAP, clean_RCR,
+                adv_RMSE, adv_Recall, adv_MAP, adv_RCR,))
+
+    return inverse_trans_pre, inverse_trans_label,  inverse_trans_clean_pre
+
+def pgd_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
+         grid_node_map, scaler, risk_mask, device, data_type='nyc'):
+    '''
+    fgsm攻击方法
+    logger:日志保存
+    cfgs：配置信息
+    num_steps:迭代次数
+    step_size：步长
+    epsilon,：扰动大小
+    map:攻击节点矩阵
+    '''
+    # fgsm只迭代一次
+    num_steps = cfgs.ack_num_steps
+    step_size = cfgs.ack_step_size
+    epsilon = cfgs.ack_epsilon
+    Random_noise = cfgs.Random_noise
+    att_round = cfgs.att_round
+    net.train()
+    acc_prediction_list = []
+    label_list = []
+    clean_prediction_list = []
+    a = []
+    batch_idx = 0
+    batch_num_x = 0
+    # with torch.no_grad():
+    # 载入map数据
+    map_loader = DataLoader(dataset=map, batch_size=32, shuffle=False)
+    ziped = zip(map_loader, dataloader)  # 封装map的迭代器
+    
+    a_grid_ori = pd.read_pickle('/home/wyb/mycode/GSNet-master/data/nyc/grid_node_map.pkl')#400*243
+    a_grid_ori  = np.expand_dims(a_grid_ori ,0).repeat(7,axis=0)#7*400*243
+    
+    for map, test_loader_ues in ziped:
+        batch_idx += 1
+        # map 32*20*20,升维
+        map = np.expand_dims(map, 1).repeat(48, axis=1)  # 32*48*20*20
+        map = np.expand_dims(map, 1).repeat(7, axis=1)  # 32*7*48*20*20
+        map = map.astype(np.float32)
+        map = torch.from_numpy(map)
+        feature, target_time, graph_feature, label = test_loader_ues
+        # 对特征进行攻击
+        start = time.time()
+        X_pgd001 = feature.clone().detach()
+        # 不添加随机噪声
+        map, target_time, graph_feature, label = map.to(device), target_time.to(
+            device), graph_feature.to(device), label.to(device)
+        feature = feature.to(device)
+        a_grid_ori_a = a_grid_ori.copy()
+        a_grid_ori_a  = np.expand_dims(a_grid_ori_a ,0).repeat(feature.shape[0],axis=0)#32*7*400*243
+        a_grid_ori_b = torch.from_numpy(a_grid_ori_a).to(torch.float).to(device)
+        # 生成对抗样本
+        if Random_noise:
+            random_noise = torch.FloatTensor(
+                *feature.shape).uniform_(-epsilon/10, epsilon/10).cuda()
+            feature = Variable(feature.data + map *
+                               random_noise, requires_grad=True)
+        
+        featur_cc = feature.detach().clone()
+        for _ in range(num_steps):
+            opt = optim.SGD([feature], lr=1e-3)
+            opt.zero_grad()
+            net = net.to(device)
+            feature.retain_grad()
+            with torch.enable_grad():
+                loss = nn.MSELoss()(net(feature, target_time, graph_feature, road_adj, risk_adj, poi_adj,
+                                        grid_node_map), label)
+            loss.backward()
+            #print('loss的值为{}'.format(loss))
+
+            eta = step_size * feature.grad.data.sign()*map
+            feature = Variable(feature.data + eta, requires_grad=True)
+            eta = torch.clamp(feature.data - featur_cc.data, -epsilon, epsilon)
+            feature = Variable(featur_cc.data + eta, requires_grad=True)
+            feature = Variable(torch.clamp(feature, 0, 1.0),
+                             requires_grad=True)
+        if att_round:
+            X_pgd_round = atc_round(feature,X_pgd001)#攻击后攻击前
+        
+        X_pgd001 = X_pgd001.to(device)
+        # 每个batch的三个量
+        #print("pgd的方法{}".format(torch.sum(feature[:,:,0,:,:].reshape(-1)>0)))
+        ##print("原始样本{}".format(torch.sum(X_pgd001[:,:,0,:,:].reshape(-1)>0)))
+        #ddm = X_pgd001[8,6,0,:,:].detach().cpu().numpy()
+        #ddp = feature[8,6,0,:,:].detach().cpu().numpy()
+        #sb.heatmap(ddm)
+        #sb.heatmap(ddp*46.0)
+        #plt.show()
+        #sb.heatmap(ddm*46.0)
+        #plt.show()
+        #feature.duff()
+        X_pgd_h = vote_hours(X_pgd_round,device)
+        X_pgd_d = vote_days(X_pgd_h,device)
+        X_pgd_ho = vote_holiday(X_pgd_d,device)
+        X_pgd_w = vote_weather(X_pgd_ho,device)
+
+        feature_h = vote_hours(feature,device)
+ 
+        #######----------##########取整就行
+        graph_feature_adv = graph_feature.clone().detach()
+
+        hi = feature.shape[0]
+        ddd=torch.matmul(X_pgd_w[:,:,0,:,:].reshape(hi,7,400).unsqueeze(2),a_grid_ori_b).squeeze()#32*7*1*400
+
+        graph_feature_adv[:,:,1,:] = ddd
+        graph_feature_adv[:,:,1:3,:] = torch.matmul(X_pgd_w[:,:,46:48,:,:].reshape(hi,7,2,400),a_grid_ori_b)
+        # 每个batch的三个量
+        batch_adv = net(X_pgd_w, target_time, graph_feature_adv,
+                        road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
+        batch_x = net(X_pgd001, target_time, graph_feature,
+                      road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
+        batch_label = label.detach().cpu().numpy()
+        # 保存入数组和打印
+        clean_prediction_list.append(batch_x)
+        acc_prediction_list.append(batch_adv)
+        label_list.append(batch_label)
+        inves_batch_adv = scaler.inverse_transform(batch_adv)
+        inves_batch_x = scaler.inverse_transform(batch_x)
+        inves_batch_label = scaler.inverse_transform(batch_label)
+        clean_RMSE, clean_Recall, clean_MAP, clean_RCR = mask_evaluation_np(
+            inves_batch_label, inves_batch_x, risk_mask, 0)
+        adv_RMSE, adv_Recall, adv_MAP, adv_RCR = mask_evaluation_np(
+            inves_batch_label, inves_batch_adv, risk_mask, 0)
+        # 打印日志输出
+        batch_num_x += len(feature)
+        if batch_idx % cfgs.log_interval == 0:
+            logger_info(logger, False, 'Info:  [{}/{} ({:.0f}%)]\t  clean_RMSE: {:.4f} clean_Recall: {:.4f} clean_MAP: {:.4f} clean_RCR: {:.4f}   adv_RMSE: {:.4f} adv_Recall: {:.4f} adv_MAP: {:.4f} adv_RCR: {:.4f} time:{:.3f}'.format(
+                batch_num_x, 1080,
+                100. * batch_idx / len(dataloader),
+                clean_RMSE, clean_Recall, clean_MAP, clean_RCR,
+                adv_RMSE, adv_Recall, adv_MAP, adv_RCR,
+                time.time() - start))
+        a.append(X_pgd_w.detach().cpu().numpy())
+    a = np.concatenate(a,0)
+    #np.save('adversal_sample/pgd/pgd20node.npy',a)
+    clean_prediction = np.concatenate(clean_prediction_list, 0)
+    prediction = np.concatenate(acc_prediction_list, 0)
+    label = np.concatenate(label_list, 0)
+    # 将标准化后的数据转为原始数据
+    inverse_trans_pre = scaler.inverse_transform(prediction)
+    #print(inverse_trans_pre.shape)
+    #boo  = np.ones_like(inverse_trans_pre)
+    #np.save('prediction.npy',inverse_trans_pre)
+    inverse_trans_label = scaler.inverse_transform(label)
+    inverse_trans_clean_pre = scaler.inverse_transform(clean_prediction)
+    # 打印一个epoch的信息
+    #zero_RMSE, zero_Recall, zero_MAP, zero_RCR = mask_evaluation_np(inverse_trans_label, boo, risk_mask, 0)
+    #print('zero_RMSE:{}, zero_Recall:{}, zero_MAP:{}, zero_RCR:{}'.format(zero_RMSE, zero_Recall, zero_MAP, zero_RCR))
+    clean_RMSE, clean_Recall, clean_MAP, clean_RCR = mask_evaluation_np(
+        inverse_trans_label, inverse_trans_clean_pre, risk_mask, 0)
+    adv_RMSE, adv_Recall, adv_MAP, adv_RCR = mask_evaluation_np(
+        inverse_trans_label, inverse_trans_pre, risk_mask, 0)
+    logger_info(logger, False, '攻击时间：Info:time:{:.3f} \t  clean_RMSE: {:.4f} clean_Recall: {:.4f} clean_MAP: {:.4f} clean_RCR: {:.4f}   adv_RMSE: {:.4f} adv_Recall: {:.4f} adv_MAP: {:.4f} adv_RCR: {:.4f}'.format(
+                time.time() - start,
+                clean_RMSE, clean_Recall, clean_MAP, clean_RCR,
+                adv_RMSE, adv_Recall, adv_MAP, adv_RCR,))
+
+    return inverse_trans_pre, inverse_trans_label,  inverse_trans_clean_pre
+
+def random_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
+         grid_node_map, scaler, risk_mask, device, data_type='nyc'):
+    '''
+    fgsm攻击方法
+    logger:日志保存
+    cfgs：配置信息
+    num_steps:迭代次数
+    step_size：步长
+    epsilon,：扰动大小
+    map:攻击节点矩阵
+    '''
+    # fgsm只迭代一次
+    num_steps = cfgs.ack_num_steps
+    step_size = cfgs.ack_step_size
+    epsilon = cfgs.ack_epsilon
+    Random_noise = cfgs.Random_noise
+    att_round = cfgs.att_round
+    net.train()
+    acc_prediction_list = []
+    label_list = []
+    clean_prediction_list = []
+    a = []
+    batch_idx = 0
+    batch_num_x = 0
+    # with torch.no_grad():
+    # 载入map数据
+    map_loader = DataLoader(dataset=map, batch_size=32, shuffle=False)
+    ziped = zip(map_loader, dataloader)  # 封装map的迭代器
+    
+    a_grid_ori = pd.read_pickle('/home/wyb/mycode/GSNet-master/data/nyc/grid_node_map.pkl')#400*243
+    a_grid_ori  = np.expand_dims(a_grid_ori ,0).repeat(7,axis=0)#7*400*243
+    
+    for map, test_loader_ues in ziped:
+        batch_idx += 1
+        # map 32*20*20,升维
+        map = np.expand_dims(map, 1).repeat(48, axis=1)  # 32*48*20*20
+        map = np.expand_dims(map, 1).repeat(7, axis=1)  # 32*7*48*20*20
+        map = map.astype(np.float32)
+        map = torch.from_numpy(map)
+        feature, target_time, graph_feature, label = test_loader_ues
+        # 对特征进行攻击
+        start = time.time()
+        X_pgd001 = feature.clone().detach()
+        # 不添加随机噪声
+        map, target_time, graph_feature, label = map.to(device), target_time.to(
+            device), graph_feature.to(device), label.to(device)
+        feature = feature.to(device)
+        a_grid_ori_a = a_grid_ori.copy()
+        a_grid_ori_a  = np.expand_dims(a_grid_ori_a ,0).repeat(feature.shape[0],axis=0)#32*7*400*243
+        a_grid_ori_b = torch.from_numpy(a_grid_ori_a).to(torch.float).to(device)
+        # 生成对抗样本
+        if Random_noise:
+            random_noise = torch.FloatTensor(
+                *feature.shape).uniform_(-epsilon/10, epsilon/10).cuda()
+            feature = Variable(feature.data + map *
+                               random_noise, requires_grad=True)
+        
+        
+        for _ in range(num_steps):
+            opt = optim.SGD([feature], lr=1e-3)
+            opt.zero_grad()
+            feature = Variable(feature.data, requires_grad=True)
+
+
+            X_pgd = feature  # 脱裤子放屁..一个bug,1670行查看会出错X_pgd.grad.data
+            eta = torch.clamp(torch.randn(
+                size=X_pgd.shape).cuda()-0.5, -epsilon, epsilon)*map*step_size
+            # 均匀分布与随机分布
+            #eta = torch.clamp(torch.rand(size=X_pgd.shape).cuda()-0.5, -epsilon, epsilon)*map
+            X_pgd = Variable(feature.data + eta, requires_grad=True)
+            X_pgd = Variable(torch.clamp(X_pgd, 0, 1.0),
+                             requires_grad=True)
+            feature = X_pgd
+        if att_round:
+            X_pgd_round = atc_round(feature,X_pgd001)#攻击后攻击前
+        X_pgd001 = X_pgd001.to(device)
+
+        #######----------##########取整就行
+        X_pgd_round = X_pgd_round.to(device)
+        X_pgd_h = vote_hours(X_pgd_round,device)
+        X_pgd_d = vote_days(X_pgd_h,device)
+        X_pgd_ho = vote_holiday(X_pgd_d,device)
+        X_pgd_w = vote_weather(X_pgd_ho,device)
+
+        graph_feature_adv = graph_feature.clone().detach()
+        hi = feature.shape[0]
+        ddd=torch.matmul(X_pgd_round[:,:,0,:,:].reshape(hi,7,400).unsqueeze(2),a_grid_ori_b).squeeze()#32*7*1*400
+       
+        
+        graph_feature_adv[:,:,1,:] = ddd
+        graph_feature_adv[:,:,1:3,:] = torch.matmul(X_pgd_round[:,:,46:48,:,:].reshape(hi,7,2,400),a_grid_ori_b)
+        # 每个batch的三个量
+        batch_adv = net(X_pgd_w, target_time, graph_feature_adv,
+                        road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
+        batch_x = net(X_pgd001, target_time, graph_feature,
+                      road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
+        batch_label = label.detach().cpu().numpy()
+        # 保存入数组和打印
+        clean_prediction_list.append(batch_x)
+        acc_prediction_list.append(batch_adv)
+        label_list.append(batch_label)
+        inves_batch_adv = scaler.inverse_transform(batch_adv)
+        inves_batch_x = scaler.inverse_transform(batch_x)
+        inves_batch_label = scaler.inverse_transform(batch_label)
+        clean_RMSE, clean_Recall, clean_MAP, clean_RCR = mask_evaluation_np(
+            inves_batch_label, inves_batch_x, risk_mask, 0)
+        adv_RMSE, adv_Recall, adv_MAP, adv_RCR = mask_evaluation_np(
+            inves_batch_label, inves_batch_adv, risk_mask, 0)
+        # 打印日志输出
+        batch_num_x += len(feature)
+        if batch_idx % cfgs.log_interval == 0:
+            logger_info(logger, False, 'Info:  [{}/{} ({:.0f}%)]\t  clean_RMSE: {:.4f} clean_Recall: {:.4f} clean_MAP: {:.4f} clean_RCR: {:.4f}   adv_RMSE: {:.4f} adv_Recall: {:.4f} adv_MAP: {:.4f} adv_RCR: {:.4f} time:{:.3f}'.format(
+                batch_num_x, 1080,
+                100. * batch_idx / len(dataloader),
+                clean_RMSE, clean_Recall, clean_MAP, clean_RCR,
+                adv_RMSE, adv_Recall, adv_MAP, adv_RCR,
+                time.time() - start))
+
+    clean_prediction = np.concatenate(clean_prediction_list, 0)
+    prediction = np.concatenate(acc_prediction_list, 0)
+    label = np.concatenate(label_list, 0)
+    # 将标准化后的数据转为原始数据
+    inverse_trans_pre = scaler.inverse_transform(prediction)
+    inverse_trans_label = scaler.inverse_transform(label)
+    inverse_trans_clean_pre = scaler.inverse_transform(clean_prediction)
+    # 打印一个epoch的信息
+    clean_RMSE, clean_Recall, clean_MAP, clean_RCR = mask_evaluation_np(
+        inverse_trans_label, inverse_trans_clean_pre, risk_mask, 0)
+    adv_RMSE, adv_Recall, adv_MAP, adv_RCR = mask_evaluation_np(
+        inverse_trans_label, inverse_trans_pre, risk_mask, 0)
+    logger_info(logger, False, '攻击时间：Info:time:{:.3f} \t  clean_RMSE: {:.4f} clean_Recall: {:.4f} clean_MAP: {:.4f} clean_RCR: {:.4f}   adv_RMSE: {:.4f} adv_Recall: {:.4f} adv_MAP: {:.4f} adv_RCR: {:.4f}'.format(
+                time.time() - start,
+                clean_RMSE, clean_Recall, clean_MAP, clean_RCR,
+                adv_RMSE, adv_Recall, adv_MAP, adv_RCR,))
+
+    return inverse_trans_pre, inverse_trans_label,  inverse_trans_clean_pre
+
+
 def vote_hours(feature,device):
     #feature 32/24*7*48*20*20
     a,b,c,_,_ = feature.shape
@@ -2015,3 +3108,384 @@ def vote_hours(feature,device):
                 feature[i,j,1:vota_index+1,:,:] = torch.zeros(vota_index,20,20).to(device)
                 feature[i,j,vota_index+2:25,:,:] = torch.zeros(23-vota_index,20,20).to(device)
     return feature
+
+def vote_days(feature,device):
+    #feature 32/24*7*48*20*20--25-31
+    a,b,c,_,_ = feature.shape
+    feature = feature.detach()
+    for i in range(a):
+        for j in range(b):
+            vote_data = feature[i,j,25:32,:,:].reshape(7,400)
+            vota_index = torch.sum(vote_data,axis=1)#7票
+            vota_index = torch.argmax(vota_index)#获取位置0-6
+            if vota_index==6:
+                vota_index = 0
+            feature[i,j,vota_index+25,:,:] = torch.ones(20,20).to(device)
+            if vota_index==0:
+                feature[i,j,26:32,:,:] = torch.zeros(6,20,20).to(device)
+            elif vota_index==6:
+                feature[i,j,25:31,:,:] = torch.zeros(6,20,20).to(device)
+            else:
+                feature[i,j,25:25+vota_index-1,:,:] = torch.zeros(vota_index-1,20,20).to(device)
+                feature[i,j,vota_index+26:32,:,:] = torch.zeros(6-vota_index,20,20).to(device)
+    return feature
+
+def vote_weather(feature,device):
+    #feature 32/24*7*48*20*20(41-45)25-31
+    a,b,c,_,_ = feature.shape
+    feature = feature.detach()
+    for i in range(a):
+        for j in range(b):
+            vote_data = feature[i,j,41:46,:,:].reshape(5,400)
+            vota_index = torch.sum(vote_data,axis=1)#5票
+            vota_index = torch.argmax(vota_index)#获取位置
+            if vota_index==4:
+                vota_index = 0
+            feature[i,j,vota_index+41,:,:] = torch.ones(20,20).to(device)
+            if vota_index==0:
+                feature[i,j,42:46,:,:] = torch.zeros(4,20,20).to(device)
+            elif vota_index==4:#这太严重了
+                feature[i,j,41:45,:,:] = torch.zeros(4,20,20).to(device)
+            else:
+                feature[i,j,41:41+vota_index-1,:,:] = torch.zeros(vota_index-1,20,20).to(device)
+                feature[i,j,vota_index+42:46,:,:] = torch.zeros(4-vota_index,20,20).to(device)
+    return feature
+
+
+def vote_holiday(feature,device):
+    #feature 32/24*7*48*20*20
+    a,b,c,_,_ = feature.shape
+    feature = feature.detach()
+    for i in range(a):
+        for j in range(b):
+            vote_data = feature[i,j,32,:,:].reshape(400)
+            vota_index = torch.sum(vote_data)
+            if vota_index>200:
+                feature[i,j,32,:,:] = torch.ones(20,20).to(device)
+            else:
+                feature[i,j,32,:,:] = torch.zeros(20,20).to(device)
+    return feature
+
+
+def ZINBSC_geneater(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
+           grid_node_map, scaler, risk_mask, device, data_type='nyc'):
+    '''
+    logger:日志保存
+    cfgs：配置信息
+    num_steps:迭代次数
+    step_size：步长
+    epsilon,：扰动大小
+    map:攻击节点矩阵
+    不可感知
+    '''
+    num_steps = cfgs.ack_num_steps
+    step_size = cfgs.ack_step_size
+    epsilon = cfgs.ack_epsilon
+    Random_noise = cfgs.Random_noise
+    days = cfgs.days
+    hours = cfgs.hours
+    weather = cfgs.weather
+
+    net.train()
+    acc_prediction_list = []
+    label_list = []
+    clean_prediction_list = []
+    a = 0
+    batch_idx = 0
+    batch_num_x = 0
+    unable=[]
+
+    target_time_nov = []
+    lab_nov = []
+    adv_feature = []
+    adv_graph = []
+
+    # with torch.no_grad():
+    # 载入map数据
+    map_loader = DataLoader(dataset=map, batch_size=32, shuffle=False)
+    ziped = zip(map_loader, dataloader)  # 封装map的迭代器
+
+    risk_mask_use = np.expand_dims(risk_mask, 0).repeat(32, axis=0)
+    risk_mask_use = torch.from_numpy(risk_mask_use).to(device)
+
+    l_50 = np.load('/home/wyb/mycode/GSNet-master/adversal_sample/40_sample.npy')/25.0
+    l_50 = torch.from_numpy(l_50).to(device)
+
+    a_grid_ori = pd.read_pickle('/home/wyb/mycode/GSNet-master/data/nyc/grid_node_map.pkl')#400*243
+    a_grid_ori  = np.expand_dims(a_grid_ori ,0).repeat(7,axis=0)#7*400*243
+    
+
+    for map, test_loader_ues in ziped:
+        
+        batch_idx += 1
+        # map 32*20*20,升维
+
+        map_01 = map.clone().detach().to(device)#risk用
+        map = np.expand_dims(map, 1).repeat(48, axis=1)  # 32*48*20*20
+        map = np.expand_dims(map, 1).repeat(7, axis=1)  # 32*7*48*20*20
+        map = map.astype(np.float32)
+        map = torch.from_numpy(map)
+        feature, target_time, graph_feature, label = test_loader_ues
+        # 对特征进行攻击
+        a_grid_ori_a = a_grid_ori.copy()
+        a_grid_ori_a  = np.expand_dims(a_grid_ori_a ,0).repeat(feature.shape[0],axis=0)#32*7*400*243
+        a_grid_ori_b = torch.from_numpy(a_grid_ori_a).to(torch.float).to(device)
+        start = time.time()
+        X_pgd001 = feature.clone().detach()
+        #graph_feature攻击
+
+        # 生成对抗样本
+        
+        if Random_noise:
+            random_noise = torch.FloatTensor(
+                *feature.shape).uniform_(-epsilon/10, epsilon/10)
+            feature = Variable(feature.data + map *
+                               random_noise, requires_grad=True)
+        map = map.to(device)
+        for _ in range(num_steps):
+            opt = optim.SGD([feature], lr=1e-3)
+            opt.zero_grad()
+            feature = Variable(feature.data, requires_grad=True)
+            target_time, graph_feature, label =  target_time.to(
+                device), graph_feature.to(device), label.to(device)
+            feature = feature.to(device)
+            net.to(device)
+            feature.retain_grad()
+            with torch.enable_grad():
+                loss = kl_div(net(feature, target_time, graph_feature, road_adj, risk_adj, poi_adj,
+                                  grid_node_map),  label)
+            loss.backward()
+
+            X_pgd = feature  # 脱裤子放屁..
+
+            eta = step_size * X_pgd.grad.data.sign()*map
+            X_pgd = Variable(X_pgd.data + eta, requires_grad=True)
+            eta = torch.clamp(X_pgd.data - feature.data, -epsilon, epsilon)
+            X_pgd = Variable(feature.data + eta, requires_grad=True)
+            X_pgd = Variable(torch.clamp(X_pgd, 0, 1.0),
+                             requires_grad=True)
+            feature = X_pgd
+        #feature = atc_round(feature,X_pgd001)#攻击后攻击前
+        X_pgd001 = X_pgd001.to(device)
+        #计算不可感知性
+        unable.append(torch.sum(feature[:,:,1:25,:,:]>0)) 
+        #####组合攻击方法
+        #1.risk攻击
+        feature = vers_attack001_map(map_01,feature,device,l_50)
+        #2.时间轮转攻击
+        #24Hours
+        feature = vers_attack002(hours,feature)
+        #7days
+        feature = vers_attack003(days,feature)
+        #weather
+        feature = vers_attack004(weather,feature)
+        #holiday
+        feature = vers_attack005(feature)
+        ####组合攻击结束
+        target_time_adv = target_time.clone().detach()
+        graph_feature_adv = graph_feature.clone().detach()
+
+        target_time_adv = feature[:,6,1:33,5,5]#任选一个地方，时间片6
+        #noda_map
+        #a_grid:32*7*400*243
+        #32*7*1*400  32*7*400*243
+        hi = feature.shape[0]
+        ddd=torch.matmul(feature[:,:,0,:,:].reshape(hi,7,400).unsqueeze(2),a_grid_ori_b).squeeze()#32*7*1*400
+
+        graph_feature_adv[:,:,1,:] = ddd
+        graph_feature_adv[:,:,1:3,:] = torch.matmul(feature[:,:,46:48,:,:].reshape(hi,7,2,400),a_grid_ori_b)
+        # 每个batch的三个量
+        X_pgd002 = X_pgd001.clone().detach().cpu().numpy()
+        X_pgd003 = feature.clone().detach().cpu().numpy()  # 样本
+        graph_pgd002 = graph_feature_adv.clone().detach().cpu().numpy()  # 图
+        graph_pgd003 = graph_feature.clone().detach().cpu().numpy()
+        target_time002 = target_time.clone().detach().cpu().numpy()
+        label002 = label.clone().detach().cpu().numpy()
+
+        adv_feature.append(X_pgd002)
+        adv_feature.append(X_pgd003)
+        adv_graph.append(graph_pgd002)
+        adv_graph.append(graph_pgd003)
+        target_time_nov.append(target_time002)
+        target_time_nov.append(target_time002)
+        lab_nov.append(label002)
+        lab_nov.append(label002)
+
+        batch_num_x += len(feature)
+        if batch_idx % cfgs.log_interval == 0:
+            logger_info(logger, False, 'Info:  [{}/{} ({:.0f}%)]\t   time:{:.3f}'.format(
+                batch_num_x, 4584,
+                100. * batch_idx / len(dataloader),
+                time.time() - start))
+
+    X_pgd002 = np.concatenate(adv_feature, 0)
+    X_pgd003 = np.concatenate(adv_graph, 0)
+    X_pgd004 = np.concatenate(target_time_nov, 0)
+    X_pgd005 = np.concatenate(lab_nov, 0)
+    print('对抗样本生成成功，特征大小是：{}，图大小是：{}'.format(X_pgd002.shape, X_pgd003.shape))
+    print('时间大小是：{}，标签大小是：{}'.format(X_pgd004.shape, X_pgd005.shape))
+    np.save('/home/wyb/mycode/GSNet-master/model_retrain/X_test0021.npy', X_pgd002)
+    np.save('/home/wyb/mycode/GSNet-master/model_retrain/X_test031.npy', X_pgd003)
+    np.save('/home/wyb/mycode/GSNet-master/model_retrain/X_test0041.npy', X_pgd004)
+    np.save('/home/wyb/mycode/GSNet-master/model_retrain/X_test0051.npy', X_pgd005)
+
+    return 1
+
+
+def ZINBSC_geneater_kk(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
+           grid_node_map, scaler, risk_mask, device, data_type='nyc'):
+    '''
+    logger:日志保存
+    cfgs：配置信息
+    num_steps:迭代次数
+    step_size：步长
+    epsilon,：扰动大小
+    map:攻击节点矩阵
+    不可感知
+    '''
+    num_steps = cfgs.ack_num_steps
+    step_size = cfgs.ack_step_size
+    epsilon = cfgs.ack_epsilon
+    Random_noise = cfgs.Random_noise
+    days = cfgs.days
+    hours = cfgs.hours
+    weather = cfgs.weather
+
+    net.train()
+    acc_prediction_list = []
+    label_list = []
+    clean_prediction_list = []
+    a = 0
+    batch_idx = 0
+    batch_num_x = 0
+    unable=[]
+
+    target_time_nov = []
+    lab_nov = []
+    adv_feature = []
+    adv_graph = []
+
+    # with torch.no_grad():
+    # 载入map数据
+    map_loader = DataLoader(dataset=map, batch_size=32, shuffle=False)
+    ziped = zip(map_loader, dataloader)  # 封装map的迭代器
+
+    risk_mask_use = np.expand_dims(risk_mask, 0).repeat(32, axis=0)
+    risk_mask_use = torch.from_numpy(risk_mask_use).to(device)
+
+    l_50 = np.load('/home/wyb/mycode/GSNet-master/adversal_sample/40_sample.npy')/46.0
+    l_50 = torch.from_numpy(l_50).to(device)
+
+    a_grid_ori = pd.read_pickle('/home/wyb/mycode/GSNet-master/data/nyc/grid_node_map.pkl')#400*243
+    a_grid_ori  = np.expand_dims(a_grid_ori ,0).repeat(7,axis=0)#7*400*243
+    
+
+    for map, test_loader_ues in ziped:
+        
+        batch_idx += 1
+        # map 32*20*20,升维
+
+        map_01 = map.clone().detach().to(device)#risk用
+        map = np.expand_dims(map, 1).repeat(48, axis=1)  # 32*48*20*20
+        map = np.expand_dims(map, 1).repeat(7, axis=1)  # 32*7*48*20*20
+        map = map.astype(np.float32)
+        map = torch.from_numpy(map)
+        feature, target_time, graph_feature, label = test_loader_ues
+        # 对特征进行攻击
+        a_grid_ori_a = a_grid_ori.copy()
+        a_grid_ori_a  = np.expand_dims(a_grid_ori_a ,0).repeat(feature.shape[0],axis=0)#32*7*400*243
+        a_grid_ori_b = torch.from_numpy(a_grid_ori_a).to(torch.float).to(device)
+        start = time.time()
+        X_pgd001 = feature.clone().detach()
+        #graph_feature攻击
+
+        # 生成对抗样本
+        
+        if Random_noise:
+            random_noise = torch.FloatTensor(
+                *feature.shape).uniform_(-epsilon/10, epsilon/10)
+            feature = Variable(feature.data + map *
+                            random_noise, requires_grad=True)
+        map = map.to(device)
+        for _ in range(num_steps):
+            opt = optim.SGD([feature], lr=1e-3)
+            opt.zero_grad()
+            feature = Variable(feature.data, requires_grad=True)
+            target_time, graph_feature, label =  target_time.to(
+                device), graph_feature.to(device), label.to(device)
+            feature = feature.to(device)
+            net.to(device)
+            feature.retain_grad()
+            with torch.enable_grad():
+                loss = kl_div(net(feature, target_time, graph_feature, road_adj, risk_adj, poi_adj,
+                                grid_node_map),  label)
+            loss.backward()
+
+            X_pgd = feature  # 脱裤子放屁..
+
+            eta = step_size * X_pgd.grad.data.sign()*map
+            X_pgd = Variable(X_pgd.data + eta, requires_grad=True)
+            eta = torch.clamp(X_pgd.data - feature.data, -epsilon, epsilon)
+            X_pgd = Variable(feature.data + eta, requires_grad=True)
+            X_pgd = Variable(torch.clamp(X_pgd, 0, 1.0),
+                            requires_grad=True)
+            feature = X_pgd
+        #feature = atc_round(feature,X_pgd001)#攻击后攻击前
+        X_pgd001 = X_pgd001.to(device)
+        #计算不可感知性
+        unable.append(torch.sum(feature[:,:,1:25,:,:]>0)) 
+        #####组合攻击方法
+        #1.risk攻击
+        feature = vers_attack001_map(map_01,feature,device,l_50)
+        #2.时间轮转攻击
+        #24Hours
+        feature = vers_attack002(hours,feature)
+        #7days
+        feature = vers_attack003(days,feature)
+        #weather
+        feature = vers_attack004(weather,feature)
+        #holiday
+        feature = vers_attack005(feature)
+        ####组合攻击结束
+        target_time_adv = target_time.clone().detach()
+        graph_feature_adv = graph_feature.clone().detach()
+
+        target_time_adv = feature[:,6,1:33,5,5]#任选一个地方，时间片6
+        #noda_map
+        #a_grid:32*7*400*243
+        #32*7*1*400  32*7*400*243
+        hi = feature.shape[0]
+        ddd=torch.matmul(feature[:,:,0,:,:].reshape(hi,7,400).unsqueeze(2),a_grid_ori_b).squeeze()#32*7*1*400
+
+        graph_feature_adv[:,:,1,:] = ddd
+        graph_feature_adv[:,:,1:3,:] = torch.matmul(feature[:,:,46:48,:,:].reshape(hi,7,2,400),a_grid_ori_b)
+        # 每个batch的三个量
+        X_pgd003 = feature.clone().detach().cpu().numpy()  # 样本
+        graph_pgd002 = graph_feature_adv.clone().detach().cpu().numpy()  # 图
+        target_time002 = target_time.clone().detach().cpu().numpy()
+        label002 = label.clone().detach().cpu().numpy()
+
+        adv_feature.append(X_pgd003)
+        adv_graph.append(graph_pgd002)
+        target_time_nov.append(target_time002)
+        lab_nov.append(label002)
+
+        batch_num_x += len(feature)
+        if batch_idx % cfgs.log_interval == 0:
+            logger_info(logger, False, 'Info:  [{}/{} ({:.0f}%)]\t   time:{:.3f}'.format(
+                batch_num_x, 1080,
+                100. * batch_idx / len(dataloader),
+                time.time() - start))
+
+    X_pgd002 = np.concatenate(adv_feature, 0)
+    X_pgd003 = np.concatenate(adv_graph, 0)
+    X_pgd004 = np.concatenate(target_time_nov, 0)
+    X_pgd005 = np.concatenate(lab_nov, 0)
+    print('对抗样本生成成功，特征大小是：{}，图大小是：{}'.format(X_pgd002.shape, X_pgd003.shape))
+    print('时间大小是：{}，标签大小是：{}'.format(X_pgd004.shape, X_pgd005.shape))
+    np.save('/home/wyb/mycode/GSNet-master/model_retrain/Xtest02a.npy', X_pgd002)
+    np.save('/home/wyb/mycode/GSNet-master/model_retrain/Xtest03a.npy', X_pgd003)
+    np.save('/home/wyb/mycode/GSNet-master/model_retrain/Xtest04a.npy', X_pgd004)
+    np.save('/home/wyb/mycode/GSNet-master/model_retrain/Xtest05a.npy', X_pgd005)
+
+    return 1
