@@ -307,7 +307,6 @@ def item_saliency_map_zz(input_grads, k, batch_size):
         # print(kd)
         node_saliency_map = np.where(d1 < kd, 0., 1.)  # 20*20大小的
         node_map.append(node_saliency_map)
-    np.save('k_node.npy', np.array(view_node))
     return np.array(node_map)
 
 def sum_loss(a, risk_mask):
@@ -818,8 +817,6 @@ def node_map(select_name,chi_k,out_K, cfgs, net, dataloader, risk_mask, road_adj
             #map.fu()
             
         select_name = np.concatenate(map, 0)
-        #print(select_name.shape)
-        np.save('map_{}.npy'.format(K),select_name)
         return select_name
     
 
@@ -1067,11 +1064,11 @@ def ZINBSC(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
                 time.time() - start))
         a.append(feature.detach().cpu().numpy())
     a = np.concatenate(a,0)
-    #np.save('adversal_sample/zinb/20node.npy',a)
+
     clean_prediction = np.concatenate(clean_prediction_list, 0)
     prediction = np.concatenate(acc_prediction_list, 0)
     label = np.concatenate(label_list, 0)
-    # 将标准化后的数据转为原始数据
+
     inverse_trans_pre = scaler.inverse_transform(prediction)
     inverse_trans_label = scaler.inverse_transform(label)
     inverse_trans_clean_pre = scaler.inverse_transform(clean_prediction)
@@ -1352,15 +1349,13 @@ def pgd_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
                 time.time() - start))
         a.append(X_pgd_w.detach().cpu().numpy())
     a = np.concatenate(a,0)
-    #np.save('adversal_sample/pgd/pgd20node.npy',a)
+
     clean_prediction = np.concatenate(clean_prediction_list, 0)
     prediction = np.concatenate(acc_prediction_list, 0)
     label = np.concatenate(label_list, 0)
     # 将标准化后的数据转为原始数据
     inverse_trans_pre = scaler.inverse_transform(prediction)
-    #print(inverse_trans_pre.shape)
-    #boo  = np.ones_like(inverse_trans_pre)
-    #np.save('prediction.npy',inverse_trans_pre)
+
     inverse_trans_label = scaler.inverse_transform(label)
     inverse_trans_clean_pre = scaler.inverse_transform(clean_prediction)
     # 打印一个epoch的信息
