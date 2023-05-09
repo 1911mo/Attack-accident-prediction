@@ -405,7 +405,7 @@ def rand_attack(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj
                                         grid_node_map),  label)
             loss.backward()
 
-            X_pgd = feature  # 脱裤子放屁..
+            X_pgd = feature  
 
             # 修改的地方
             eta = torch.clamp(torch.randn(
@@ -1153,12 +1153,12 @@ def min_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
                                         grid_node_map), label)
             loss.backward()
 
-            X_pgd = feature  # 脱裤子放屁..
+            X_pgd = feature 
             grad = X_pgd.grad.data / \
                 torch.mean(torch.abs(X_pgd.grad.data),
                            [1, 2, 3, 4], keepdim=True)
             previous_grad = torch.tensor(
-                1.0) * previous_grad + grad  # 1.0可以是一个参数，写入cfgs文件配置中
+                1.0) * previous_grad + grad  
             X_pgd = Variable(X_pgd.data + step_size *
                              previous_grad.sign(), requires_grad=True)
             eta = torch.clamp(X_pgd.data - feature.data, -epsilon, epsilon)
@@ -1170,7 +1170,7 @@ def min_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
         X_pgd = Variable(torch.clamp(X_pgd, 0, 1.0), requires_grad=True)
 
         X_pgd_round = atc_round(X_pgd,X_pgd001)#攻击后攻击前
-        #print(torch.sum(X_pgd[:,:,1:33,:,:]!=(vote_hours(X_pgd,device)[:,:,1:33,:,:])))
+
         X_pgd_round = X_pgd_round.to(device)
 
         # 每个batch的三个量
@@ -1178,20 +1178,19 @@ def min_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
         X_pgd_d = vote_days(X_pgd_h,device)
         X_pgd_ho = vote_holiday(X_pgd_d,device)
         X_pgd_w = vote_weather(X_pgd_ho,device)
-        #print(torch.sum(X_pgd_w[:,:,41:46,:,:]!=X_pgd_ho[:,:,41:46,:,:]))
-        #print(X_pgd_h.diss())
+
         graph_feature_adv = graph_feature.clone().detach()
         hi = X_pgd_w.shape[0]
         ddd=torch.matmul(X_pgd_w[:,:,0,:,:].reshape(hi,7,400).unsqueeze(2),a_grid_ori_b).squeeze()#32*7*1*400
         graph_feature_adv[:,:,1,:] = ddd
         graph_feature_adv[:,:,1:3,:] = torch.matmul(X_pgd_w[:,:,46:48,:,:].reshape(hi,7,2,400),a_grid_ori_b)
-        # 每个batch的三个量
+
         batch_adv = net(X_pgd_w, target_time, graph_feature_adv,
                         road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
         batch_x = net(X_pgd001, target_time, graph_feature,
                       road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
         batch_label = label.detach().cpu().numpy()
-        # 保存入数组和打印
+
         clean_prediction_list.append(batch_x)
         acc_prediction_list.append(batch_adv)
         label_list.append(batch_label)
@@ -1202,7 +1201,7 @@ def min_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
             inves_batch_label, inves_batch_x, risk_mask, 0)
         adv_RMSE, adv_Recall, adv_MAP, adv_RCR = mask_evaluation_np(
             inves_batch_label, inves_batch_adv, risk_mask, 0)
-        # 打印日志输出
+ 
         batch_num_x += len(feature)
         if batch_idx % cfgs.log_interval == 0:
             logger_info(logger, False, 'Info:  [{}/{} ({:.0f}%)]\t  clean_RMSE: {:.4f} clean_Recall: {:.4f} clean_MAP: {:.4f} clean_RCR: {:.4f}   adv_RMSE: {:.4f} adv_Recall: {:.4f} adv_MAP: {:.4f} adv_RCR: {:.4f} time:{:.3f}'.format(
@@ -1216,8 +1215,7 @@ def min_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
     prediction = np.concatenate(acc_prediction_list, 0)
     label = np.concatenate(label_list, 0)
     a = np.concatenate(a,0)
-    #np.save('adversal_sample/min/min20node.npy',a)
-    # 将标准化后的数据转为原始数据
+
     inverse_trans_pre = scaler.inverse_transform(prediction)
     inverse_trans_label = scaler.inverse_transform(label)
     inverse_trans_clean_pre = scaler.inverse_transform(clean_prediction)
@@ -1257,8 +1255,7 @@ def pgd_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
     a = []
     batch_idx = 0
     batch_num_x = 0
-    # with torch.no_grad():
-    # 载入map数据
+
     map_loader = DataLoader(dataset=map, batch_size=32, shuffle=False)
     ziped = zip(map_loader, dataloader)  # 封装map的迭代器
     
@@ -1309,20 +1306,9 @@ def pgd_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
             feature = Variable(torch.clamp(feature, 0, 1.0),
                              requires_grad=True)
         if att_round:
-            X_pgd_round = atc_round(feature,X_pgd001)#攻击后攻击前
+            X_pgd_round = atc_round(feature,X_pgd001)
         
         X_pgd001 = X_pgd001.to(device)
-        # 每个batch的三个量
-        #print("pgd的方法{}".format(torch.sum(feature[:,:,0,:,:].reshape(-1)>0)))
-        ##print("原始样本{}".format(torch.sum(X_pgd001[:,:,0,:,:].reshape(-1)>0)))
-        #ddm = X_pgd001[8,6,0,:,:].detach().cpu().numpy()
-        #ddp = feature[8,6,0,:,:].detach().cpu().numpy()
-        #sb.heatmap(ddm)
-        #sb.heatmap(ddp*46.0)
-        #plt.show()
-        #sb.heatmap(ddm*46.0)
-        #plt.show()
-        #feature.duff()
         X_pgd_h = vote_hours(X_pgd_round,device)
         X_pgd_d = vote_days(X_pgd_h,device)
         X_pgd_ho = vote_holiday(X_pgd_d,device)
@@ -1330,7 +1316,7 @@ def pgd_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
 
         feature_h = vote_hours(feature,device)
  
-        #######----------##########取整就行
+
         graph_feature_adv = graph_feature.clone().detach()
 
         hi = feature.shape[0]
@@ -1338,7 +1324,7 @@ def pgd_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
 
         graph_feature_adv[:,:,1,:] = ddd
         graph_feature_adv[:,:,1:3,:] = torch.matmul(X_pgd_w[:,:,46:48,:,:].reshape(hi,7,2,400),a_grid_ori_b)
-        # 每个batch的三个量
+
         batch_adv = net(X_pgd_w, target_time, graph_feature_adv,
                         road_adj, risk_adj, poi_adj, grid_node_map).detach().cpu().numpy()
         batch_x = net(X_pgd001, target_time, graph_feature,
@@ -1455,7 +1441,7 @@ def random_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj
             feature = Variable(feature.data, requires_grad=True)
 
 
-            X_pgd = feature  # 脱裤子放屁..一个bug,1670行查看会出错X_pgd.grad.data
+            X_pgd = feature  
             eta = torch.clamp(torch.randn(
                 size=X_pgd.shape).cuda()-0.5, -epsilon, epsilon)*map*step_size
             # 均匀分布与随机分布
