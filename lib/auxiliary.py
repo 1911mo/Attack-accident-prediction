@@ -8,14 +8,14 @@ import random
 
 # 输入标签矩阵或预测矩阵，输出loss,与标签值无关
 def ten_loss(a,  k, device):  # a网络输出，
-    h = np.load('weight_nyc.npy',allow_pickle=True)
+    h = np.load('data/weight_nyc.npy',allow_pickle=True)
     h = torch.from_numpy(h).to(device)
     y15 = top_k(k, device)
     y_35 = last_k(k, device)
     return torch.sum(a*y_35)-torch.sum(a*h*y15)
 
 def top_k(K, device):  # a为5、10、20、30、40
-    aaa = pd.read_pickle('accident_value.pkl')
+    aaa = pd.read_pickle('data/accident_value.pkl')
     aaa = aaa.reshape(-1, 400)
     b = np.sum(aaa, axis=0)
     sort_array = np.argsort(-b)
@@ -30,7 +30,7 @@ def top_k(K, device):  # a为5、10、20、30、40
 
 
 def last_k(K, device):  # a为5、10、20、30、40
-    aaa = pd.read_pickle('accident_value.pkl')
+    aaa = pd.read_pickle('data/accident_value.pkl')
     aaa = aaa.reshape(-1, 400)
     b = np.sum(aaa, axis=0)
     sort_array = np.argsort(-b)

@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from myfunction import kl_div, js_div, log_test_results, logger_info, view_tensor,kl_div_pro
+from lib.myfunction import kl_div, js_div, log_test_results, logger_info, view_tensor,kl_div_pro
 import time
 import random
 from torch.utils.data import DataLoader
