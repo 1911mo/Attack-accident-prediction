@@ -14,8 +14,8 @@ epsilon: 0.5
 
 #pgd,fgsm
 test_attack_nodes: 0.5
-select_node: [ten]
-#[Centrality,Degree,pagerank,random,saliency_loss_mse,top_history,SLT,ten]
+select_node: [HGNS]
+#[Centrality,Degree,pagerank,random,saliency_loss_mse,HGNS]
 #none,sum_yi_loss
 #[Centrality,Degree,pagerank,top_history,sum_yi_loss_test]
 ack_num_steps: 5
@@ -28,10 +28,8 @@ attacker: white_attacker
 att_round: 1
 Random_noise: 1
 attack_method: [ZINBSC]
-#[fgsm_impr,min_impr,pgd_impr,random_impr,ZINBSC,rand_attack]
-#[ZINBSC_geneater]
-#[prenoise_pgd,rand_attack,kl_pgd,JS_pgd,min,fgsm,ZINBSC]
-#[none_distri_attack,vers_attack,select_attack,JS_pgd_impr]
+#[min_impr,pgd_impr,random_impr,ZINBSC,rand_attack]
+
 #扰动幅度
 test_epsilon: 0.5
 num_timesteps: 1
