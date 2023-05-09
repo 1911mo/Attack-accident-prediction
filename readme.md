@@ -1,6 +1,6 @@
 unzip data.zip -d data
 
-run attack_GSnet0502 copy.ipynb
+run gsnet_attack_main.ipynb
 
 the rusults are saved in ./logdata/result
 
