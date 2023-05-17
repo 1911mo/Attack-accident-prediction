@@ -8,13 +8,13 @@ batchsize: 32
 #节点选择方法node_map
 for_random: 1
 num_nodes: 400
-K: [40]
+K: [10,20,30,40]
 step_size: 0.1
 epsilon: 0.5
 
 #pgd,fgsm
 test_attack_nodes: 0.5
-select_node: [Centrality,Degree,pagerank,random,saliency_loss_mse]]
+select_node: [Centrality,Degree,pagerank,random,saliency_loss_mse]
 #[Centrality,Degree,pagerank,random,saliency_loss_mse]
 #none,sum_yi_loss
 #[Centrality,Degree,pagerank,top_history,sum_yi_loss_test]
