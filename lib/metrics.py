@@ -27,7 +27,7 @@ def mask_mse_np(y_true, y_pred, region_mask, null_val=None):
         mask = region_mask * label_mask
     else:
         mask = region_mask
-    mask = np.load('/home/wyb/mycode/GSNet-master/data/nyc/243nyc.npy')
+    mask = np.load('/data/nyc/243nyc.npy')
     
     mask /= mask.mean()
     return np.mean(((y_true-y_pred)*mask)**2)

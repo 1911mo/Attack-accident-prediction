@@ -5,7 +5,7 @@ import os
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-
+from scipy.stats import entropy
 
 # 输入一个Numpy数组，输出数据信息，包括维度、最大值、最小值
 def view_numpy(a):
@@ -49,6 +49,45 @@ def kl_div(akl, bkl):
     ckl = torch.sum(akl*torch.log2(akl/bkl))
     return ckl
 
+def kl_div_pro(akl, bkl,mask):
+    mask = torch.unsqueeze(mask,0).repeat(akl.shape[0],1,1)
+    akl = softmax_pro(akl,mask)
+    bkl = softmax_pro(bkl,mask)#32*400
+    p =akl
+    q =bkl
+    t = torch.ones(akl.shape[0],1)
+    for i in range(akl.shape[0]):
+        #print(p[i,:])
+        #print(torch.sum(p[i,:]))
+        kl_div_loss = torhc_js_div(p[i,:], q[i,:])
+        t[i,:] = kl_div_loss
+    print(torch.mean(t))
+    return torch.mean(t)
+
+def torhc_js_div(p, q):
+    m = 0.5 * (p + q)
+    return 0.5 * (torch.nn.functional.kl_div(p, m) + torch.nn.functional.kl_div(q, m))
+
+def softmax_pro(x,mask):
+    # 输入32*1*20*20
+    # 计算每行的最大值
+    x = x.reshape(-1,400)
+    mask = mask.reshape(-1,400)
+    mask = torch.ones_like(mask)
+    row_max,_ = torch.max(x,dim= 1,keepdim=True)#32*1
+    row_max = row_max.repeat(1,400)#32*400
+    #print(row_max.shape)
+    # 每行元素都需要减去对应的最大值，否则求exp(x)会溢出，导致inf情况
+    x = x - row_max
+    #print(x.shape)#32*400
+    #print(mask.shape)#32*400
+    x_exp = torch.exp(x)*mask
+
+    x_sum = torch.sum(x_exp,dim=1,keepdim=True)
+    x_sum = x_sum.repeat(1,400)
+    #print(x_sum.shape)
+    s = x_exp / x_sum
+    return s
 
 def softmax(x):
     # 输入32*1*20*20
