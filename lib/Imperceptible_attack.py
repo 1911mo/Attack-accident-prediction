@@ -1112,7 +1112,7 @@ def min_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
     map_loader = DataLoader(dataset=map, batch_size=32, shuffle=False)
     ziped = zip(map_loader, dataloader)  # 封装map的迭代器
     
-    a_grid_ori = pd.read_pickle('/data/nyc/grid_node_map.pkl')#400*243
+    a_grid_ori = pd.read_pickle('data/nyc/grid_node_map.pkl')#400*243
     a_grid_ori  = np.expand_dims(a_grid_ori ,0).repeat(7,axis=0)#7*400*243
     
     
@@ -1256,7 +1256,7 @@ def pgd_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
     map_loader = DataLoader(dataset=map, batch_size=32, shuffle=False)
     ziped = zip(map_loader, dataloader)  # 封装map的迭代器
     
-    a_grid_ori = pd.read_pickle('/data/nyc/grid_node_map.pkl')#400*243
+    a_grid_ori = pd.read_pickle('data/nyc/grid_node_map.pkl')#400*243
     a_grid_ori  = np.expand_dims(a_grid_ori ,0).repeat(7,axis=0)#7*400*243
     
     for map, test_loader_ues in ziped:
@@ -1401,7 +1401,7 @@ def random_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj
     map_loader = DataLoader(dataset=map, batch_size=32, shuffle=False)
     ziped = zip(map_loader, dataloader)  # 封装map的迭代器
     
-    a_grid_ori = pd.read_pickle('/data/nyc/grid_node_map.pkl')#400*243
+    a_grid_ori = pd.read_pickle('data/nyc/grid_node_map.pkl')#400*243
     a_grid_ori  = np.expand_dims(a_grid_ori ,0).repeat(7,axis=0)#7*400*243
     
     for map, test_loader_ues in ziped:
