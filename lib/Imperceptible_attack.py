@@ -773,7 +773,7 @@ def node_map(select_name,chi_k,out_K, cfgs, net, dataloader, risk_mask, road_adj
         select_name = np.concatenate(map, 0)
         print(select_name.shape)
         return select_name
-    if select_name == 'ten':  # 不迭代
+    if select_name == 'HGNS':  # 不迭代
         for feature, target_time, graph_feature, label in dataloader:
             # 选择敏感节点
             X_saliency = feature
@@ -905,7 +905,7 @@ def vers_attack005(feature):
     return feature
 
 
-def ZINBSC(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
+def STZINB(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
            grid_node_map, scaler, risk_mask, device, data_type='nyc'):
     '''
     logger:日志保存
