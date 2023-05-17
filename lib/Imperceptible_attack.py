@@ -221,7 +221,7 @@ def predict_and_evaluate(net, dataloader, risk_mask, road_adj, risk_adj, poi_adj
         np.array -- label and pre，shape(num_sample,pre_len,W,H)
 
     """
-    # print("数据类型", type(net), type(dataloader), type(risk_mask), type(road_adj), type(grid_node_map),)
+    
     net.eval()
     prediction_list = []
     label_list = []
@@ -234,7 +234,7 @@ def predict_and_evaluate(net, dataloader, risk_mask, road_adj, risk_adj, poi_adj
                                road_adj, risk_adj, poi_adj, grid_node_map).cpu().numpy())
         label_list.append(label.cpu().numpy())
     prediction = np.concatenate(prediction_list, 0)
-    # 1080*1*20*20=34*32*20*20,把34该array拼成一个
+    # 1080*1*20*20=34*32*20*20,
     label = np.concatenate(label_list, 0)
 
     inverse_trans_pre = scaler.inverse_transform(prediction)
@@ -325,7 +325,7 @@ def sum_risk_file(a, pre_num, device):  # a为5、10、20、30、40
     return torch.sum(a*risk_file)
 
 def sum_risk_file_k(a, K, device):  # a为5、10、20、30、40
-    aaa = pd.read_pickle('accident_value.pkl')
+    aaa = pd.read_pickle('data/accident_value.pkl')
     aaa = aaa.reshape(-1, 400)
     b = np.sum(aaa, axis=0)
     sort_array = np.argsort(-b)
@@ -673,7 +673,7 @@ def node_map(select_name,chi_k,out_K, cfgs, net, dataloader, risk_mask, road_adj
     epsilon = cfgs.epsilon
     net.train()
     map = []
-    wise = pd.read_pickle('/home/wyb/mycode/GSNet-master/data/nyc/risk_adj.pkl')
+    wise = pd.read_pickle('data/nyc/risk_adj.pkl')
     map_243 = np.load("data/nyc/243nyc.npy")
     map_243_n = map_243.copy()
     map_243 =torch.from_numpy(map_243).to(device)
@@ -719,7 +719,7 @@ def node_map(select_name,chi_k,out_K, cfgs, net, dataloader, risk_mask, road_adj
     
     if select_name == 'top_history':
         # 返回np矩阵1080*20*20，值为1 的地方为选中的节点(K个)
-        aaa =pd.read_pickle('/home/wyb/mycode/GSNet-master/accident_value.pkl')
+        aaa =pd.read_pickle('data/accident_value.pkl')
         aaa=aaa.reshape(-1,400)
         b = np.sum(aaa,axis=0)
         sort_array=np.argsort(-b)
@@ -941,10 +941,10 @@ def ZINBSC(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
     risk_mask_use = torch.from_numpy(risk_mask_use).to(device)
     risk_mask_div = torch.from_numpy(risk_mask.copy()).to(device)
 
-    l_50 = np.load('/home/wyb/mycode/GSNet-master/adversal_sample/40_sample.npy')/25.0
+    l_50 = np.load('data/40_sample.npy')/25.0
     l_50 = torch.from_numpy(l_50).to(device)
 
-    a_grid_ori = pd.read_pickle('/home/wyb/mycode/GSNet-master/data/nyc/grid_node_map.pkl')#400*243
+    a_grid_ori = pd.read_pickle('data/nyc/grid_node_map.pkl')#400*243
     a_grid_ori  = np.expand_dims(a_grid_ori ,0).repeat(7,axis=0)#7*400*243
     
 
@@ -1112,7 +1112,7 @@ def min_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
     map_loader = DataLoader(dataset=map, batch_size=32, shuffle=False)
     ziped = zip(map_loader, dataloader)  # 封装map的迭代器
     
-    a_grid_ori = pd.read_pickle('/home/wyb/mycode/GSNet-master/data/nyc/grid_node_map.pkl')#400*243
+    a_grid_ori = pd.read_pickle('/data/nyc/grid_node_map.pkl')#400*243
     a_grid_ori  = np.expand_dims(a_grid_ori ,0).repeat(7,axis=0)#7*400*243
     
     
@@ -1256,7 +1256,7 @@ def pgd_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
     map_loader = DataLoader(dataset=map, batch_size=32, shuffle=False)
     ziped = zip(map_loader, dataloader)  # 封装map的迭代器
     
-    a_grid_ori = pd.read_pickle('/home/wyb/mycode/GSNet-master/data/nyc/grid_node_map.pkl')#400*243
+    a_grid_ori = pd.read_pickle('/data/nyc/grid_node_map.pkl')#400*243
     a_grid_ori  = np.expand_dims(a_grid_ori ,0).repeat(7,axis=0)#7*400*243
     
     for map, test_loader_ues in ziped:
@@ -1401,7 +1401,7 @@ def random_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj
     map_loader = DataLoader(dataset=map, batch_size=32, shuffle=False)
     ziped = zip(map_loader, dataloader)  # 封装map的迭代器
     
-    a_grid_ori = pd.read_pickle('/home/wyb/mycode/GSNet-master/data/nyc/grid_node_map.pkl')#400*243
+    a_grid_ori = pd.read_pickle('/data/nyc/grid_node_map.pkl')#400*243
     a_grid_ori  = np.expand_dims(a_grid_ori ,0).repeat(7,axis=0)#7*400*243
     
     for map, test_loader_ues in ziped:
