@@ -1155,7 +1155,7 @@ def min_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
                 torch.mean(torch.abs(X_pgd.grad.data),
                            [1, 2, 3, 4], keepdim=True)
             previous_grad = torch.tensor(
-                1.0) * previous_grad + grad  
+                4.0) * previous_grad + grad  
             X_pgd = Variable(X_pgd.data + step_size *
                              previous_grad.sign(), requires_grad=True)
             eta = torch.clamp(X_pgd.data - feature.data, -epsilon, epsilon)
