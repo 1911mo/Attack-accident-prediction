@@ -729,7 +729,7 @@ def node_map(select_name,chi_k,out_K, cfgs, net, dataloader, risk_mask, road_adj
         d =d.reshape(20,20)
         return np.expand_dims(d,0).repeat(1080,axis=0)
     
-    if select_name == 'saliency_loss_mse':
+    if select_name == 'TDNS':
         for feature, target_time, graph_feature, label in dataloader:
             # 选择敏感节点
             X_saliency = feature

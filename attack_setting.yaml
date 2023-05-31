@@ -14,7 +14,7 @@ epsilon: 0.5
 
 #pgd,fgsm
 test_attack_nodes: 0.5
-select_node: [Centrality,Degree,pagerank,random,saliency_loss_mse]
+select_node: [Centrality,Degree,pagerank,random,TDNS]
 #[Centrality,Degree,pagerank,random,saliency_loss_mse]
 #none,sum_yi_loss
 #[Centrality,Degree,pagerank,top_history,sum_yi_loss_test]
