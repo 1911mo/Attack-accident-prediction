@@ -820,91 +820,6 @@ def node_map(select_name,chi_k,out_K, cfgs, net, dataloader, risk_mask, road_adj
         return select_name
     
 
-def vers_attack002(hours,feature):
-    #feature:32*7*48*20*20
-    # 32维度，每个样本有个时间
-    #a:32*7*24*20*20
-    if hours==0:
-        return feature
-
-    for i in range(feature.shape[0]):#样本
-        for j in range(feature.shape[1]):#时间片
-            a = torch.zeros(24,feature.shape[3],feature.shape[4])
-            #print(feature[i,j,1:25,1,1])
-            if torch.sum(feature[i,j,1:25,1,1])!=1.0:
-                s = random.randint(0,4)
-                #print('错误出现')
-                #print(feature[i,j,1:25,1,1])
-            else:
-                s = np.nonzero(feature[i,j,1:25,1,1]).item()#寻找index
-            #print(feature[i,j,1:25,1,1])
-            #print(s)
-            #s =[s,s[1000+i]]
-            if s+hours >23:
-                a[s,:,:]=torch.zeros(20,20)#
-                a[s+hours-24,:,:]=torch.ones(20,20)
-            else:
-                k = s
-                a[k,:,:]=torch.zeros(20,20)
-                a[k+hours,:,:]=torch.ones(20,20)
-            feature[i,j,1:25,:,:] = a
-    return feature
-
-
-def vers_attack003(days,feature):        #7days
-    #feature:32*7*48*20*20
-    # 32维度，每个样本有个时间
-    #a:32*7*7*20*20
-    if days==0:
-        return feature
-    
-    for i in range(feature.shape[0]):#样本
-        for j in range(feature.shape[1]):#时间片
-            a = torch.zeros((7,feature.shape[3],feature.shape[4]))
-            #print(feature[i,j,25:32,1,1])
-            if torch.sum(feature[i,j,25:32,1,1]==0)!=6:
-                s = random.randint(0,4)
-                #print(feature[i,j,25:32,1,1])
-            else:
-                s = np.nonzero(feature[i,j,25:32,1,1]).item()#寻找index
-            if s+days >6:
-                a[s,:,:]=torch.zeros(20,20)#
-                a[s+days-7,:,:]=torch.ones(20,20)
-            else:
-                k = s
-                a[k,:,:]=torch.zeros(20,20)
-                a[k+days,:,:]=torch.ones(20,20)
-            feature[i,j,25:32,:,:] = a
-    return feature
-def vers_attack004(weathers,feature):
-        #feature:32*7*48*20*20
-    # 32维度，每个样本有个时间
-    #a:32*7*7*20*20
-    if weathers==0:
-        return feature
-       
-    for i in range(feature.shape[0]):#样本
-        for j in range(feature.shape[1]):#时间片
-            a = torch.zeros((5,feature.shape[3],feature.shape[4]))
-            if torch.sum(feature[i,j,41:46,1,1]==0)!=5:
-                s = random.randint(0,4)
-            else:
-                s = np.nonzero(feature[i,j,41:46,1,1]).item()#寻找index
-            if s+weathers >4:
-                a[s,:,:]=torch.zeros(20,20)#
-                a[s+weathers-5,:,:]=torch.ones(20,20)
-            else:
-                k = s
-                a[k,:,:]=torch.zeros(20,20)
-                a[k+weathers,:,:]=torch.ones(20,20)
-            feature[i,j,41:46,:,:] = a
-    return feature   
-
-def vers_attack005(feature):
-    feature[:,:,1:33,:,:] = torch.round( feature[:,:,1:33,:,:])
-    return feature
-
-
 def STZINB(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
            grid_node_map, scaler, risk_mask, device, data_type='nyc'):
     '''
@@ -1004,27 +919,7 @@ def STZINB(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
         #####组合攻击方法
         #1.risk攻击
         feature = vers_attack001_map(map_01,feature,device,l_50)
-        #2.时间攻击
-        #print(map_01.shape)
-        #sb.heatmap(map_01[2,:,:].detach().cpu().numpy())
-        #print("our的方法{}".format(torch.sum(feature[:,:,0,:,:].reshape(-1)>0)))
-        #print("原始样本{}".format(torch.sum(X_pgd001[:,:,0,:,:].reshape(-1)>0)))
-        #ddm = X_pgd001[9,5,0,:,:].detach().cpu().numpy()
-        #ddp = feature[9,5,0,:,:].detach().cpu().numpy()
-        #sb.heatmap(ddm*46.0)
-        #plt.show()
-        #sb.heatmap(ddp*46.0)
-        #plt.show()
-        #feature.duff()
-        #24Hours
-        feature = vers_attack002(hours,feature)
-        #7days
-        feature = vers_attack003(days,feature)
-        #weather
-        feature = vers_attack004(weather,feature)
-        #holiday
-        feature = vers_attack005(feature)
-        ####组合攻击结束
+
         target_time_adv = target_time.clone().detach()
         graph_feature_adv = graph_feature.clone().detach()
 
@@ -1170,12 +1065,7 @@ def min_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
 
         X_pgd_round = X_pgd_round.to(device)
 
-        # 每个batch的三个量
-        X_pgd_h = vote_hours(X_pgd_round,device)
-        X_pgd_d = vote_days(X_pgd_h,device)
-        X_pgd_ho = vote_holiday(X_pgd_d,device)
-        X_pgd_w = vote_weather(X_pgd_ho,device)
-
+        X_pgd_w = X_pgd_round
         graph_feature_adv = graph_feature.clone().detach()
         hi = X_pgd_w.shape[0]
         ddd=torch.matmul(X_pgd_w[:,:,0,:,:].reshape(hi,7,400).unsqueeze(2),a_grid_ori_b).squeeze()#32*7*1*400
@@ -1306,13 +1196,8 @@ def pgd_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
             X_pgd_round = atc_round(feature,X_pgd001)
         
         X_pgd001 = X_pgd001.to(device)
-        X_pgd_h = vote_hours(X_pgd_round,device)
-        X_pgd_d = vote_days(X_pgd_h,device)
-        X_pgd_ho = vote_holiday(X_pgd_d,device)
-        X_pgd_w = vote_weather(X_pgd_ho,device)
 
-        feature_h = vote_hours(feature,device)
- 
+        X_pgd_w = X_pgd_round
 
         graph_feature_adv = graph_feature.clone().detach()
 
@@ -1451,10 +1336,7 @@ def random_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj
 
         #######----------##########取整就行
         X_pgd_round = X_pgd_round.to(device)
-        X_pgd_h = vote_hours(X_pgd_round,device)
-        X_pgd_d = vote_days(X_pgd_h,device)
-        X_pgd_ho = vote_holiday(X_pgd_d,device)
-        X_pgd_w = vote_weather(X_pgd_ho,device)
+        X_pgd_w = X_pgd_round
 
         graph_feature_adv = graph_feature.clone().detach()
         hi = feature.shape[0]
@@ -1509,81 +1391,3 @@ def random_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj
 
     return inverse_trans_pre, inverse_trans_label,  inverse_trans_clean_pre
 
-
-def vote_hours(feature,device):
-    #feature 32/24*7*48*20*20
-    a,b,c,_,_ = feature.shape
-    feature = feature.detach()
-    for i in range(a):
-        for j in range(b):
-            vote_data = feature[i,j,1:25,:,:].reshape(24,400)
-            vota_index = torch.sum(vote_data,axis=1)#24票
-            vota_index = torch.argmax(vota_index)#获取位置
-            if vota_index==23:
-                vota_index = 0
-            feature[i,j,vota_index+1,:,:] = torch.ones(20,20).to(device)
-            if vota_index==0:
-                feature[i,j,2:25,:,:] = torch.zeros(23,20,20).to(device)
-            elif vota_index==23:
-                feature[i,j,1:24,:,:] = torch.zeros(23,20,20).to(device)
-            else:
-                feature[i,j,1:vota_index+1,:,:] = torch.zeros(vota_index,20,20).to(device)
-                feature[i,j,vota_index+2:25,:,:] = torch.zeros(23-vota_index,20,20).to(device)
-    return feature
-
-def vote_days(feature,device):
-    #feature 32/24*7*48*20*20--25-31
-    a,b,c,_,_ = feature.shape
-    feature = feature.detach()
-    for i in range(a):
-        for j in range(b):
-            vote_data = feature[i,j,25:32,:,:].reshape(7,400)
-            vota_index = torch.sum(vote_data,axis=1)#7票
-            vota_index = torch.argmax(vota_index)#获取位置0-6
-            if vota_index==6:
-                vota_index = 0
-            feature[i,j,vota_index+25,:,:] = torch.ones(20,20).to(device)
-            if vota_index==0:
-                feature[i,j,26:32,:,:] = torch.zeros(6,20,20).to(device)
-            elif vota_index==6:
-                feature[i,j,25:31,:,:] = torch.zeros(6,20,20).to(device)
-            else:
-                feature[i,j,25:25+vota_index-1,:,:] = torch.zeros(vota_index-1,20,20).to(device)
-                feature[i,j,vota_index+26:32,:,:] = torch.zeros(6-vota_index,20,20).to(device)
-    return feature
-
-def vote_weather(feature,device):
-    #feature 32/24*7*48*20*20(41-45)25-31
-    a,b,c,_,_ = feature.shape
-    feature = feature.detach()
-    for i in range(a):
-        for j in range(b):
-            vote_data = feature[i,j,41:46,:,:].reshape(5,400)
-            vota_index = torch.sum(vote_data,axis=1)#5票
-            vota_index = torch.argmax(vota_index)#获取位置
-            if vota_index==4:
-                vota_index = 0
-            feature[i,j,vota_index+41,:,:] = torch.ones(20,20).to(device)
-            if vota_index==0:
-                feature[i,j,42:46,:,:] = torch.zeros(4,20,20).to(device)
-            elif vota_index==4:#这太严重了
-                feature[i,j,41:45,:,:] = torch.zeros(4,20,20).to(device)
-            else:
-                feature[i,j,41:41+vota_index-1,:,:] = torch.zeros(vota_index-1,20,20).to(device)
-                feature[i,j,vota_index+42:46,:,:] = torch.zeros(4-vota_index,20,20).to(device)
-    return feature
-
-
-def vote_holiday(feature,device):
-    #feature 32/24*7*48*20*20
-    a,b,c,_,_ = feature.shape
-    feature = feature.detach()
-    for i in range(a):
-        for j in range(b):
-            vote_data = feature[i,j,32,:,:].reshape(400)
-            vota_index = torch.sum(vote_data)
-            if vota_index>200:
-                feature[i,j,32,:,:] = torch.ones(20,20).to(device)
-            else:
-                feature[i,j,32,:,:] = torch.zeros(20,20).to(device)
-    return feature
