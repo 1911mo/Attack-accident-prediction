@@ -357,7 +357,6 @@ def item_saliency_map_a(input_grads, k, map_198):
 
         if torch.sum(torch.sum(dn)) > k:
             d2 = torch.where(d2 > dk[dk_index[k]], 1., 0.)
-            # print('走过路过')
         else:
             d2 = torch.where(d2 > 0, 1., 0.)
         d3 = d2*map_198
@@ -870,7 +869,7 @@ def node_map(select_name, chi_k, out_K, in_k, cfgs, net, dataloader, risk_mask, 
             d = d.reshape(20, 20)
             return np.expand_dims(d, 0).repeat(len_cho, axis=0)
 
-        if select_name == 'saliency_loss_mse':
+        if select_name == 'TDNS':
             for feature, target_time, graph_feature, label in dataloader:
 
                 X_saliency = feature
@@ -910,7 +909,9 @@ def node_map(select_name, chi_k, out_K, in_k, cfgs, net, dataloader, risk_mask, 
                         X_saliency, 0, 1.0), requires_grad=True)
                 saliency_map = item_saliency_map_zz(
                     inputs_grad, K, feature.shape[0])
-                map.append(saliency_map)
+                mak01 = np.load('data/chicago/197_chicago.npy')
+                mak01 = np.expand_dims(mak01, 0).repeat(feature.shape[0], axis=0)
+                map.append(saliency_map*mak01)
             select_name = np.concatenate(map, 0)
             print(select_name.shape)
             return select_name
@@ -954,87 +955,8 @@ def node_map(select_name, chi_k, out_K, in_k, cfgs, net, dataloader, risk_mask, 
 
             select_name = np.concatenate(map, 0)
    
-            np.save('map_{}.npy'.format(K), select_name)
+            #np.save('map_{}.npy'.format(K), select_name)
             return select_name
-
-
-def vers_attack002(hours, feature):
-
-    if hours == 0:
-        return feature
-
-    for i in range(feature.shape[0]):  # 样本
-        for j in range(feature.shape[1]):  # 时间片
-            a = torch.zeros(24, feature.shape[3], feature.shape[4])
-            # print(feature[i,j,1:25,1,1])
-            if torch.sum(feature[i, j, 1:25, 1, 1]) != 1.0:
-                s = random.randint(0, 4)
-
-            else:
-                s = np.nonzero(feature[i, j, 1:25, 1, 1]).item()  # 寻找index
-
-            if s+hours > 23:
-                a[s, :, :] = torch.zeros(20, 20)
-                a[s+hours-24, :, :] = torch.ones(20, 20)
-            else:
-                k = s
-                a[k, :, :] = torch.zeros(20, 20)
-                a[k+hours, :, :] = torch.ones(20, 20)
-            feature[i, j, 1:25, :, :] = a
-    return feature
-
-
-def vers_attack003(days, feature):  # 7days
-
-    if days == 0:
-        return feature
-
-    for i in range(feature.shape[0]):  
-        for j in range(feature.shape[1]):  
-            a = torch.zeros((7, feature.shape[3], feature.shape[4]))
-            # print(feature[i,j,25:32,1,1])
-            if torch.sum(feature[i, j, 25:32, 1, 1] == 0) != 6:
-                s = random.randint(0, 4)
-                # print(feature[i,j,25:32,1,1])
-            else:
-                s = np.nonzero(feature[i, j, 25:32, 1, 1]).item()  # 寻找index
-            if s+days > 6:
-                a[s, :, :] = torch.zeros(20, 20)
-                a[s+days-7, :, :] = torch.ones(20, 20)
-            else:
-                k = s
-                a[k, :, :] = torch.zeros(20, 20)
-                a[k+days, :, :] = torch.ones(20, 20)
-            feature[i, j, 25:32, :, :] = a
-    return feature
-
-
-def vers_attack004(weathers, feature):
-
-    if weathers == 0:
-        return feature
-
-    for i in range(feature.shape[0]):  
-        for j in range(feature.shape[1]):  
-            a = torch.zeros((5, feature.shape[3], feature.shape[4]))
-            if torch.sum(feature[i, j, 41:46, 1, 1] == 0) != 5:
-                s = random.randint(0, 4)
-            else:
-                s = np.nonzero(feature[i, j, 41:46, 1, 1]).item()  
-            if s+weathers > 4:
-                a[s, :, :] = torch.zeros(20, 20)
-                a[s+weathers-5, :, :] = torch.ones(20, 20)
-            else:
-                k = s
-                a[k, :, :] = torch.zeros(20, 20)
-                a[k+weathers, :, :] = torch.ones(20, 20)
-            feature[i, j, 41:46, :, :] = a
-    return feature
-
-
-def vers_attack005(feature):
-    feature[:, :, 1:33, :, :] = torch.round(feature[:, :, 1:33, :, :])
-    return feature
 
 
 def STZINB(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
@@ -1052,9 +974,6 @@ def STZINB(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
     step_size = cfgs.ack_step_size
     epsilon = cfgs.ack_epsilon
     Random_noise = cfgs.Random_noise
-    days = cfgs.days
-    hours = cfgs.hours
-    weather = cfgs.weather
 
     net.train()
     acc_prediction_list = []
@@ -1142,13 +1061,7 @@ def STZINB(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
         unable.append(torch.sum(feature[:, :, 1:25, :, :] > 0))
 
         feature = vers_attack001_map(map_01, feature, device, l_50)
-        feature = vers_attack002(hours, feature)
-        # 7days
-        feature = vers_attack003(days, feature)
-        # weather
-        feature = vers_attack004(weather, feature)
-        # holiday
-        feature = vers_attack005(feature)
+
 
         target_time_adv = target_time.clone().detach()
         graph_feature_adv = graph_feature.clone().detach()
@@ -1308,12 +1221,7 @@ def min_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
         X_pgd_round = atc_round(X_pgd, X_pgd001)  
         # print(torch.sum(X_pgd[:,:,1:33,:,:]!=(vote_hours(X_pgd,device)[:,:,1:33,:,:])))
         X_pgd_round = X_pgd_round.to(device)
-
-       
-        X_pgd_h = vote_hours(X_pgd_round, device)
-        X_pgd_d = vote_days(X_pgd_h, device)
-        X_pgd_ho = vote_holiday(X_pgd_d, device)
-        X_pgd_w = vote_weather_cho(X_pgd_ho, device)
+        X_pgd_w = X_pgd_round
 
         graph_feature_adv = graph_feature.clone().detach()
         hi = X_pgd_w.shape[0]
@@ -1450,14 +1358,7 @@ def pgd_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj,
         if att_round:
             X_pgd_round = atc_round(feature, X_pgd001)  
         X_pgd001 = X_pgd001.to(device)
-
-        X_pgd_h = vote_hours(X_pgd_round, device)
-        X_pgd_d = vote_days(X_pgd_h, device)
-        X_pgd_ho = vote_holiday(X_pgd_d, device)
-        X_pgd_w = vote_weather_cho(X_pgd_ho, device)
-
-        feature_h = vote_hours(feature, device)
-
+        X_pgd_w = X_pgd_round
 
         graph_feature_adv = graph_feature.clone().detach()
 
@@ -1593,10 +1494,7 @@ def random_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj
         X_pgd001 = X_pgd001.to(device)
 
         X_pgd_round = X_pgd_round.to(device)
-        X_pgd_h = vote_hours(X_pgd_round, device)
-        X_pgd_d = vote_days(X_pgd_h, device)
-        X_pgd_ho = vote_holiday(X_pgd_d, device)
-        X_pgd_w = vote_weather_cho(X_pgd_ho, device)
+        X_pgd_w = X_pgd_round
 
         graph_feature_adv = graph_feature.clone().detach()
         hi = feature.shape[0]
@@ -1653,112 +1551,3 @@ def random_impr(logger, cfgs, map, net, dataloader,  road_adj, risk_adj, poi_adj
     return inverse_trans_pre, inverse_trans_label,  inverse_trans_clean_pre
 
 
-def vote_hours(feature, device):
-
-    a, b, c, _, _ = feature.shape
-    feature = feature.detach()
-    for i in range(a):
-        for j in range(b):
-            vote_data = feature[i, j, 1:25, :, :].reshape(24, 400)
-            vota_index = torch.sum(vote_data, axis=1)  
-            vota_index = torch.argmax(vota_index)  
-            if vota_index == 23:
-                vota_index = 0
-            feature[i, j, vota_index+1, :, :] = torch.ones(20, 20).to(device)
-            if vota_index == 0:
-                feature[i, j, 2:25, :, :] = torch.zeros(23, 20, 20).to(device)
-            elif vota_index == 23:
-                feature[i, j, 1:24, :, :] = torch.zeros(23, 20, 20).to(device)
-            else:
-                feature[i, j, 1:vota_index+1, :,
-                        :] = torch.zeros(vota_index, 20, 20).to(device)
-                feature[i, j, vota_index+2:25, :,
-                        :] = torch.zeros(23-vota_index, 20, 20).to(device)
-    return feature
-
-
-def vote_days(feature, device):
-
-    a, b, c, _, _ = feature.shape
-    feature = feature.detach()
-    for i in range(a):
-        for j in range(b):
-            vote_data = feature[i, j, 25:32, :, :].reshape(7, 400)
-            vota_index = torch.sum(vote_data, axis=1)  
-            vota_index = torch.argmax(vota_index)  
-            if vota_index == 6:
-                vota_index = 0
-            feature[i, j, vota_index+25, :, :] = torch.ones(20, 20).to(device)
-            if vota_index == 0:
-                feature[i, j, 26:32, :, :] = torch.zeros(6, 20, 20).to(device)
-            elif vota_index == 6:
-                feature[i, j, 25:31, :, :] = torch.zeros(6, 20, 20).to(device)
-            else:
-                feature[i, j, 25:25+vota_index-1, :,
-                        :] = torch.zeros(vota_index-1, 20, 20).to(device)
-                feature[i, j, vota_index+26:32, :,
-                        :] = torch.zeros(6-vota_index, 20, 20).to(device)
-    return feature
-
-
-def vote_weather(feature, device):
-
-    a, b, c, _, _ = feature.shape
-    feature = feature.detach()
-    for i in range(a):
-        for j in range(b):
-            vote_data = feature[i, j, 41:46, :, :].reshape(5, 400)
-            vota_index = torch.sum(vote_data, axis=1)  
-            vota_index = torch.argmax(vota_index)  
-            if vota_index == 4:
-                vota_index = 0
-            feature[i, j, vota_index+41, :, :] = torch.ones(20, 20).to(device)
-            if vota_index == 0:
-                feature[i, j, 42:46, :, :] = torch.zeros(4, 20, 20).to(device)
-            elif vota_index == 23:
-                feature[i, j, 41:45, :, :] = torch.zeros(4, 20, 20).to(device)
-            else:
-                feature[i, j, 41:41+vota_index-1, :,
-                        :] = torch.zeros(vota_index-1, 20, 20).to(device)
-                feature[i, j, vota_index+42:46, :,
-                        :] = torch.zeros(4-vota_index, 20, 20).to(device)
-    return feature
-
-
-def vote_weather_cho(feature, device):
-    # feature 32/24*7*48*20*20(41-45)35-39
-    a, b, c, _, _ = feature.shape
-    feature = feature.detach()
-    for i in range(a):
-        for j in range(b):
-            vote_data = feature[i, j, 35:40, :, :].reshape(5, 400)
-            vota_index = torch.sum(vote_data, axis=1)  # 5票
-            vota_index = torch.argmax(vota_index)  # 获取位置
-            if vota_index == 4:
-                vota_index = 0
-            feature[i, j, vota_index+35, :, :] = torch.ones(20, 20).to(device)
-            if vota_index == 0:
-                feature[i, j, 36:40, :, :] = torch.zeros(4, 20, 20).to(device)
-            elif vota_index == 4:
-                feature[i, j, 35:39, :, :] = torch.zeros(4, 20, 20).to(device)
-            else:
-                feature[i, j, 35:35+vota_index-1, :,
-                        :] = torch.zeros(vota_index-1, 20, 20).to(device)
-                feature[i, j, vota_index+36:40, :,
-                        :] = torch.zeros(4-vota_index, 20, 20).to(device)
-    return feature
-
-
-def vote_holiday(feature, device):
-    # feature 32/24*7*48*20*20
-    a, b, c, _, _ = feature.shape
-    feature = feature.detach()
-    for i in range(a):
-        for j in range(b):
-            vote_data = feature[i, j, 32, :, :].reshape(400)
-            vota_index = torch.sum(vote_data)
-            if vota_index > 200:
-                feature[i, j, 32, :, :] = torch.ones(20, 20).to(device)
-            else:
-                feature[i, j, 32, :, :] = torch.zeros(20, 20).to(device)
-    return feature

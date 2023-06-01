@@ -151,6 +151,8 @@ def vers_attack001_map(map, feature, device, l_50):
                     if map_b[m, n] > 0 and lo < 29:
                         lo = lo+1
                         map_a[m, n] = l_50[lrand, lo]
+                    else:
+                        map_a[m, n] = 0
             a_sample.append(map_a)
 
         feature_risk = torch.stack(a_sample)
